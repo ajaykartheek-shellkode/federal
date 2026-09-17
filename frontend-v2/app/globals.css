@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
+  body {
+    @apply bg-canvas font-sans text-base text-ink-2 antialiased;
+    overflow: hidden; /* the app shell owns its scroll regions */
+    font-feature-settings: "tnum" 1;
+  }
+  h1, h2, h3, h4 {
+    @apply text-ink;
+  }
+  :focus-visible {
+    outline: 2px solid theme("colors.brand.500");
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  ::selection {
+    background: theme("colors.gold.200");
+    color: theme("colors.brand.900");
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: theme("colors.line.strong") transparent;
+  }
+  *::-webkit-scrollbar { width: 8px; height: 8px; }
+  *::-webkit-scrollbar-thumb { background: theme("colors.line.strong"); border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
+  *::-webkit-scrollbar-track { background: transparent; }
+}
+
+@layer components {
+  /* Subtle Federal Bank "wave" texture for hero surfaces. */
+  .fb-wave {
+    background-image:
+      radial-gradient(120% 80% at 110% -10%, rgba(250, 166, 25, 0.16) 0%, transparent 55%),
+      radial-gradient(90% 70% at -10% 120%, rgba(255, 255, 255, 0.08) 0%, transparent 60%),
+      repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.035) 0 18px, transparent 18px 42px);
+  }
+  .skeleton {
+    background: linear-gradient(90deg, #eef2f8 25%, #f7f9fc 37%, #eef2f8 63%);
+    background-size: 200% 100%;
+    @apply animate-shimmer;
+  }
+  .stream-word { @apply animate-word-in; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+/* ------------------------------------------------------------------ print (report only) */
+@media print {
+  @page { size: A4; margin: 0; }
+  html, body { overflow: visible !important; height: auto !important; background: #fff !important; }
+  body > * { display: none !important; }
+  body > #report-print-root {
+    display: block !important;
+    position: static !important;
+    background: #fff !important;
+    backdrop-filter: none !important;
+    opacity: 1 !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  #report-print-root > div { overflow: visible !important; padding: 0 !important; transform: none !important; }
+  #report-print-root > div > div { transform: none !important; opacity: 1 !important; }
+  .no-print { display: none !important; }
+  .report-page { box-shadow: none !important; margin: 0 !important; width: auto !important; }
+  .report-avoid-break { break-inside: avoid; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+}

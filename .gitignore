@@ -1,0 +1,22 @@
+# Dependencies & virtual environments
+node_modules/
+.venv/
+venv/
+
+# Build output & caches
+.next/
+out/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.tsbuildinfo
+next-env.d.ts
+
+# Local environment (keep .env.example committed)
+.env
+.env.local
+
+# OS / editor noise
+.DS_Store
+.idea/
+.vscode/
