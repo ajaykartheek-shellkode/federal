@@ -7,13 +7,9 @@ import { Badge } from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import { Card, CardHeader } from "@/components/ui/Card";
 import Icon, { type IconName } from "@/components/ui/Icon";
-import Thumb from "@/components/ui/Thumb";
-import { cn, formatTime, formatWeight, formatWeightDelta, MEASURE_META, plural, purityLabel } from "@/lib/format";
+import { cn, formatTime, formatWeight, plural } from "@/lib/format";
 import { ease } from "@/lib/motion";
-import type { InventoryItem, MeasurementStatus, SessionView } from "@/lib/types";
-
-const FLAGGED: MeasurementStatus[] = ["weight_mismatch", "purity_low", "mismatch", "missing"];
-const norm = (grade: string | null | undefined) => String(grade ?? "").toUpperCase().replace(/K$/, "");
+import type { SessionView } from "@/lib/types";
 
 function Tile({
   icon,
@@ -152,98 +148,6 @@ function Reconciliation({ session }: { session: SessionView }) {
   );
 }
 
-function Shimmer({ className }: { className?: string }) {
-  return <span className={cn("skeleton inline-block h-3.5 rounded", className)} />;
-}
-
-function ReadingRow({ item, session, measuring, index }: { item: InventoryItem; session: SessionView; measuring: boolean; index: number }) {
-  const { openDialog } = useVerification();
-  const m = item.measurement;
-  const status = item.measurement_status ?? "pending";
-  const meta = MEASURE_META[status];
-  const flagged = FLAGGED.includes(status);
-  const locked = session.workflow_state === "done";
-  const delta = m ? m.weight_g - item.weight_gm : 0;
-  const weightOff = m && Math.abs(delta) > session.weight.item_tolerance_g + 1e-9;
-  const gradeLower = m && norm(m.grade) !== norm(item.carat);
-  const cell = "border-b border-line py-2.5 pr-3 align-middle";
-
-  return (
-    <motion.tr
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.3, delay: Math.min(index * 0.03, 0.3) }}
-      className={cn(flagged && !item.measurement_overridden && !measuring && "bg-warn-soft/35")}
-    >
-      <td className={cn(cell, "pl-5")}>
-        <div className="flex items-center gap-2.5">
-          <Thumb assetId={item.thumb_asset_id} alt={item.name} size={34} />
-          <div className="min-w-0">
-            <p className="truncate font-semibold text-ink">
-              {item.name}
-              {item.quantity > 1 && <span className="ml-1 text-xs font-normal text-ink-muted">×{item.quantity}</span>}
-            </p>
-            <p className="font-mono text-2xs text-ink-faint">{m?.sample_id || item.id}</p>
-          </div>
-        </div>
-      </td>
-      <td className={cn(cell, "whitespace-nowrap text-ink-2")}>
-        <span className="font-semibold text-ink">{purityLabel(item)}</span>
-        <span className="text-ink-muted"> · {formatWeight(item.weight_gm)}</span>
-        {item.material !== "gold" && (
-          <span className="ml-1.5 align-middle">
-            <Badge tone="neutral">{item.material}</Badge>
-          </span>
-        )}
-      </td>
-      <td className={cn(cell, "whitespace-nowrap")}>
-        {measuring ? (
-          <span className="flex items-center gap-2">
-            <Shimmer className="w-16" />
-            <Shimmer className="w-10" />
-          </span>
-        ) : m ? (
-          <motion.span key={m.measured_at} initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease }} className="inline-flex items-center gap-1.5">
-            <span className={cn("font-semibold tabular-nums", weightOff ? "text-warn" : "text-ink")}>{formatWeight(m.weight_g)}</span>
-            <span className="text-ink-faint">·</span>
-            <span className="tabular-nums text-ink-muted" title={m.karat !== null ? `${m.karat}K equivalent` : undefined}>
-              {m.fineness_pct.toFixed(2)}%
-            </span>
-            <Badge tone={!m.grade ? "bad" : gradeLower ? "warn" : "ok"}>{m.grade ?? "Ungraded"}</Badge>
-          </motion.span>
-        ) : (
-          <span className="text-ink-faint">—</span>
-        )}
-      </td>
-      <td className={cn(cell, "whitespace-nowrap text-right font-mono text-xs tabular-nums", weightOff && !measuring ? "font-semibold text-warn" : "text-ink-muted")}>
-        {measuring ? <Shimmer className="w-12" /> : m ? formatWeightDelta(delta) : "—"}
-      </td>
-      <td className={cn(cell, "pl-3")}>
-        {measuring ? (
-          <Badge tone="gold" dot>
-            Measuring
-          </Badge>
-        ) : item.measurement_overridden ? (
-          <Badge tone="brand" icon="pen" title={meta.label}>
-            Accepted
-          </Badge>
-        ) : (
-          <Badge tone={meta.tone} dot title={meta.hint}>
-            {meta.label}
-          </Badge>
-        )}
-      </td>
-      <td className={cn(cell, "pr-5 text-right")}>
-        {flagged && !item.measurement_overridden && !locked && !measuring && (
-          <Button size="sm" variant="secondary" icon="shieldCheck" onClick={() => openDialog({ kind: "override", target: "measurement", ref: item.id })}>
-            Accept
-          </Button>
-        )}
-      </td>
-    </motion.tr>
-  );
-}
-
 function MeasurePrompt({ session }: { session: SessionView }) {
   const { runStep, state } = useVerification();
   const canMeasure = session.allowed_actions.includes("measure");
@@ -329,39 +233,16 @@ export default function WeightPurityCard({ session }: { session: SessionView }) 
       <div className="space-y-4 px-5 pb-4">
         <Reconciliation session={session} />
         {!measured && !measuring && <MeasurePrompt session={session} />}
-      </div>
-
-      <AnimatePresence initial={false}>
         {(measured || measuring) && (
-          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.35, ease }} className="overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-sm">
-                <thead>
-                  <tr className="border-y border-line bg-subtle text-left text-2xs font-bold uppercase tracking-wider text-ink-muted">
-                    <th className="py-2 pl-5 pr-3">Item</th>
-                    <th className="py-2 pr-3">CBS declared</th>
-                    <th className="py-2 pr-3">CaratMeter reading</th>
-                    <th className="py-2 pr-3 text-right">Δ weight</th>
-                    <th className="py-2 pl-3 pr-3">Result</th>
-                    <th className="py-2 pr-5" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {session.inventory.map((item, i) => (
-                    <ReadingRow key={item.id} item={item} session={session} measuring={measuring} index={i} />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-2.5 text-2xs text-ink-muted">
-              <span className="flex items-center gap-1">
-                <Icon name="info" size={12} /> Tolerance ±{formatWeight(w.item_tolerance_g)} per item · purity margin {w.purity_tolerance_pct} pts
-              </span>
-              {device?.calibrated_at && <span>Calibrated {formatTime(device.calibrated_at)}</span>}
-            </p>
-          </motion.div>
+          <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-2xs text-ink-muted">
+            <span className="flex items-center gap-1">
+              <Icon name="info" size={12} /> Per-item readings are in the <span className="font-semibold text-ink-2">Pledged inventory</span> table below
+            </span>
+            <span>Tolerance ±{formatWeight(w.item_tolerance_g)} per item · purity margin {w.purity_tolerance_pct} pts</span>
+            {device?.calibrated_at && <span>Calibrated {formatTime(device.calibrated_at)}</span>}
+          </p>
         )}
-      </AnimatePresence>
+      </div>
     </Card>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { useVerification } from "@/components/providers/VerificationProvider";
 import { AnimatedNumber } from "@/components/ui/Controls";
 import Icon, { type IconName } from "@/components/ui/Icon";
 import { cn, formatINR, formatNumber } from "@/lib/format";
@@ -19,6 +20,7 @@ function Kpi({ icon, label, children, hint, highlight }: { icon: IconName; label
 }
 
 export default function SessionHeader({ session }: { session: SessionView }) {
+  const { state } = useVerification();
   const { loan, stats } = session;
   const initials = loan.customer_name
     .split(/\s+/)
@@ -29,6 +31,8 @@ export default function SessionHeader({ session }: { session: SessionView }) {
   const sighted = stats.verified + stats.overridden;
   const weighs = session.steps?.includes("weight");
   const measured = weighs && session.weight.measured_complete;
+  // The pledge amount is part of the pledged details, so it appears with the inventory.
+  const showPledge = state.showItems || session.collateral.images.length > 0;
 
   return (
     <motion.section variants={fadeUp} initial="hidden" animate="show" className="fb-wave relative overflow-hidden rounded-3xl bg-brand-hero p-6 text-white shadow-raised">
@@ -50,7 +54,7 @@ export default function SessionHeader({ session }: { session: SessionView }) {
           </div>
         </div>
       </div>
-      <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-5">
+      <div className={cn("mt-5 grid grid-cols-2 gap-3", showPledge ? "md:grid-cols-5" : "md:grid-cols-4")}>
         <Kpi icon="layers" label="Items" hint={`${stats.pieces} pieces`}>
           <AnimatedNumber value={stats.items} />
           <span className="ml-1 text-xs font-semibold text-white/55">{stats.pieces !== stats.items ? `${stats.pieces} pcs` : ""}</span>
@@ -70,6 +74,7 @@ export default function SessionHeader({ session }: { session: SessionView }) {
         <Kpi icon="alert" label="Damaged">
           <AnimatedNumber value={stats.damaged} />
         </Kpi>
+        {showPledge && (
         <Kpi
           icon="rupee"
           label={stats.pledge_is_estimate ? "Pledge amount · est." : "Pledge amount"}
@@ -82,6 +87,7 @@ export default function SessionHeader({ session }: { session: SessionView }) {
         >
           <AnimatedNumber value={stats.pledge_amount} format={(n) => formatINR(n)} />
         </Kpi>
+        )}
       </div>
     </motion.section>
   );

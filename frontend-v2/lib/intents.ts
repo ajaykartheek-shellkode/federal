@@ -10,6 +10,7 @@ export type Intent =
   | { kind: "need-account" }
   | { kind: "open"; dialog: "collateral" | "damage" | "document" }
   | { kind: "step"; action: "continue" | "report" | "measure" }
+  | { kind: "show-items" }
   | { kind: "ask"; question: string };
 
 const ACCOUNT = /^[A-Za-z]{0,4}\d[\w-]{5,}$/;
@@ -31,6 +32,12 @@ const NO_DAMAGE = oneOf(["no", "nope", "none", "no damage", "no damages", "nothi
 const YES_DAMAGE = oneOf(["yes", "yeah", "yep", "yes there is", "yes damaged", "there is damage", "record damage", "add damage", "damaged"]);
 const REPORT = oneOf(["generate report", "generate the report", "create report", "create the report", "report", "yes generate", "yes generate report"]);
 const UPLOAD_PHOTOS = oneOf(["upload", "upload photos", "upload photo", "add photos", "add photo", "take photo", "capture", "upload collateral", "upload collateral photos"]);
+const SHOW_ITEMS = oneOf([
+  "show pledged items", "show the pledged items", "show pledged inventory", "show the pledged inventory",
+  "show inventory", "show the inventory", "show items", "show the items", "show ornaments", "show the ornaments",
+  "pledged items", "pledged inventory", "pledged details", "show pledged details", "show the pledged details",
+  "inventory", "items", "list items", "list the items", "show details", "show the details", "show collateral details",
+]);
 const MEASURE = oneOf(["measure", "weigh", "weigh items", "fetch readings", "fetch", "get readings", "caratmeter", "carat meter", "measure weight", "measure purity", "re-measure", "remeasure", "measure again"]);
 const UPLOAD_DOCS = oneOf(["upload", "upload document", "upload documents", "upload aadhaar", "add document", "upload id", "upload id proof", "upload kyc"]);
 
@@ -43,6 +50,9 @@ export function parseIntent(raw: string, session: SessionView | null): Intent {
 
   const t = normalize(text);
   const can = (action: string) => session.allowed_actions.includes(action as never);
+
+  // Available at every step: bring the pledged inventory table on screen.
+  if (SHOW_ITEMS.test(t)) return { kind: "show-items" };
 
   switch (session.workflow_state) {
     case "collateral":

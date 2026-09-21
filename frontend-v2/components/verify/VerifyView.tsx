@@ -28,6 +28,7 @@ export default function VerifyView() {
   const { session, state } = useVerification();
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastStep = useRef<string | null>(null);
+  const wasRevealed = useRef(false);
 
   // When the workflow moves on, bring the card for the new step into view.
   useEffect(() => {
@@ -48,7 +49,20 @@ export default function VerifyView() {
     lastStep.current = key;
   }, [session]);
 
+  // Bring the inventory into view the first time it is revealed.
+  const revealed = !!session && (state.showItems || session.collateral.images.length > 0);
+  useEffect(() => {
+    if (!revealed || wasRevealed.current) return;
+    wasRevealed.current = true;
+    const container = scrollRef.current;
+    window.setTimeout(() => {
+      const target = document.getElementById("card-inventory");
+      if (target && container) container.scrollTo({ top: target.offsetTop - 96, behavior: "smooth" });
+    }, 120);
+  }, [revealed]);
+
   if (!session) {
+    wasRevealed.current = false;
     return (
       <div className="h-full overflow-y-auto">
         <div className="mx-auto max-w-[1120px] px-8 py-8">
@@ -66,6 +80,8 @@ export default function VerifyView() {
 
   const showDocuments = session.documents !== null || ["document", "report", "done"].includes(session.workflow_state);
   const weighs = session.steps.includes("weight");
+  // The pledged inventory stays off screen until the assessor asks for it, or a step produces results for it.
+  const showItems = state.showItems || session.collateral.images.length > 0;
 
   return (
     <div ref={scrollRef} className="relative h-full overflow-y-auto">
@@ -79,8 +95,8 @@ export default function VerifyView() {
         <SessionHeader session={session} />
         <CollateralPhotos session={session} />
         {weighs && <WeightPurityCard session={session} />}
-        <InventoryTable session={session} />
-        {weighs && <PledgeCard session={session} />}
+        {showItems && <InventoryTable session={session} />}
+        {weighs && showItems && <PledgeCard session={session} />}
         {showDocuments && <DocumentsCard session={session} />}
         <AuditTrail session={session} />
       </div>

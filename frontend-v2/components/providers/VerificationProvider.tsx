@@ -33,6 +33,7 @@ interface VerificationApi {
   editItem: (ref: string, changes: ItemChanges, justification: string) => Promise<boolean>;
   setScaleReading: (weightG: number, justification: string) => Promise<boolean>;
   resume: (sessionId: string) => Promise<void>;
+  revealItems: () => void;
   reset: () => void;
   openDialog: (dialog: DialogState) => void;
   closeDialog: () => void;
@@ -259,6 +260,22 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
           dispatch({ type: "user", text: trimmed });
           dispatch({ type: "dialog", dialog: { kind: intent.dialog } });
           return;
+        case "show-items": {
+          const session = sessionRef.current;
+          if (!session) return;
+          dispatch({ type: "user", text: trimmed });
+          dispatch({ type: "show-items" });
+          dispatch({ type: "view", view: "verify" });
+          const { stats } = session;
+          const damaged = session.inventory.filter((r) => r.cbs_damage).map((r) => r.name);
+          bot(
+            `Here is the pledged inventory from CBS — <strong>${stats.items} items</strong> (${stats.pieces} pieces), ` +
+              `<strong>${stats.total_weight} g</strong> declared.` +
+              (damaged.length ? ` CBS declares damage on <strong>${damaged.join(", ")}</strong>.` : "") +
+              " The table follows each step: sighting, weight &amp; purity, then valuation."
+          );
+          return;
+        }
         case "step":
           dispatch({ type: "user", text: trimmed });
           await runStep(intent.action);
@@ -317,6 +334,8 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
     [mutate]
   );
 
+  const revealItems = useCallback(() => dispatch({ type: "show-items" }), []);
+
   const setScaleReading = useCallback(
     (weightG: number, justification: string) =>
       mutate((sid) => enterScaleReading(sid, weightG, justification), "Scale reading recorded in the audit trail"),
@@ -357,6 +376,7 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
       override,
       editItem,
       setScaleReading,
+      revealItems,
       resume,
       reset,
       openDialog: (dialog) => dispatch({ type: "dialog", dialog }),
@@ -365,7 +385,7 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
       toast,
       dismissToast: (id) => dispatch({ type: "dismiss-toast", id }),
     }),
-    [state, start, runStep, send, override, editItem, setScaleReading, resume, reset, toast]
+    [state, start, runStep, send, override, editItem, setScaleReading, revealItems, resume, reset, toast]
   );
 
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;

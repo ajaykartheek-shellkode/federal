@@ -80,6 +80,7 @@ def draft(step: str, f: dict) -> str:
             f"Loaded <strong>{f['customer']}</strong> from CBS — {f['items']} items "
             f"({f['pieces']} pieces).{cbs_part} Place all pledged ornaments on the <strong>weighing scale</strong> "
             "and upload <strong>up to 3 photos</strong> with the scale display clearly visible."
+            "<br>Ask me to <strong>show the pledged items</strong> whenever you want the inventory on screen."
         )
         if not f.get("ai_enabled", True):
             base += f"<br>AI validation is off for {f['scenario']}; I'll record your captures for manual verification."

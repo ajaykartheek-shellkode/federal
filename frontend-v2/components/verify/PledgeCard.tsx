@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { AnimatedNumber } from "@/components/ui/Controls";
 import Icon from "@/components/ui/Icon";
-import { cn, DAMAGE_DEDUCTION_META, formatINR, formatWeight, plural } from "@/lib/format";
+import { DAMAGE_DEDUCTION_META, formatINR, formatWeight, plural } from "@/lib/format";
 import { ease } from "@/lib/motion";
 import type { SessionView } from "@/lib/types";
 
@@ -106,60 +106,8 @@ export default function PledgeCard({ session }: { session: SessionView }) {
         </p>
       )}
 
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="border-y border-line bg-subtle text-left text-2xs font-bold uppercase tracking-wider text-ink-muted">
-              <th className="py-2 pl-5 pr-3">Item</th>
-              <th className="py-2 pr-3 text-right">Weight</th>
-              <th className="py-2 pr-3">Grade</th>
-              <th className="py-2 pr-3 text-right">Rate / g</th>
-              <th className="py-2 pr-3 text-right">Gross value</th>
-              <th className="py-2 pr-3 text-right">LTV</th>
-              <th className="py-2 pr-3 text-right">Damage</th>
-              <th className="py-2 pr-5 text-right">Pledge</th>
-            </tr>
-          </thead>
-          <tbody>
-            {valuation.items.map((v) => (
-              <tr key={v.ornament_id} className={cn(v.unpriced && "bg-bad-soft/40")}>
-                <td className="border-b border-line py-2 pl-5 pr-3">
-                  <p className="font-semibold text-ink">{v.name}</p>
-                  <p className="text-2xs text-ink-muted">{v.material}</p>
-                </td>
-                <td className="whitespace-nowrap border-b border-line py-2 pr-3 text-right tabular-nums text-ink-2">
-                  {formatWeight(v.weight_g)}
-                  <span className={cn("block text-2xs", v.weight_basis === "measured" ? "text-ok" : "text-ink-faint")}>
-                    {v.weight_basis === "measured" ? "measured" : "declared"}
-                  </span>
-                </td>
-                <td className="border-b border-line py-2 pr-3">{v.grade ? <Badge tone="neutral">{v.grade}</Badge> : <Badge tone="bad">No rate</Badge>}</td>
-                <td className="whitespace-nowrap border-b border-line py-2 pr-3 text-right tabular-nums text-ink-2">{formatINR(v.rate_per_gram)}</td>
-                <td className="whitespace-nowrap border-b border-line py-2 pr-3 text-right tabular-nums text-ink-2">{formatINR(v.gross_value)}</td>
-                <td className="border-b border-line py-2 pr-3 text-right tabular-nums text-ink-muted">{v.ltv_pct}%</td>
-                <td className="whitespace-nowrap border-b border-line py-2 pr-3 text-right tabular-nums text-ink-muted">
-                  {v.damage_deduction > 0 ? `−${formatINR(v.damage_deduction)}` : "—"}
-                  {v.damage_percent > 0 && <span className="block text-2xs text-ink-faint">CBS {v.damage_percent}</span>}
-                </td>
-                <td className="whitespace-nowrap border-b border-line py-2 pr-5 text-right font-semibold tabular-nums text-ink">{formatINR(v.pledge_amount)}</td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr className="bg-subtle/70 text-sm">
-              <td className="py-2.5 pl-5 pr-3 font-bold text-ink">Total</td>
-              <td className="py-2.5 pr-3 text-right font-semibold tabular-nums text-ink">{formatWeight(t.weight_g)}</td>
-              <td colSpan={2} />
-              <td className="py-2.5 pr-3 text-right font-semibold tabular-nums text-ink">{formatINR(t.gross_value)}</td>
-              <td />
-              <td className="py-2.5 pr-3 text-right tabular-nums text-ink-muted">{t.damage_deduction > 0 ? `−${formatINR(t.damage_deduction)}` : "—"}</td>
-              <td className="py-2.5 pr-5 text-right font-bold tabular-nums text-brand-700">{formatINR(t.pledge_amount)}</td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
       <p className="flex items-center gap-1.5 px-5 py-2.5 text-2xs text-ink-muted">
-        <Icon name="lock" size={12} /> Rates, LTV and the damage rule were captured from Settings when this verification started. Indicative — not a sanction.
+        <Icon name="lock" size={12} /> Per-item amounts are in the Pledged inventory table · rates, LTV and the damage rule were captured from Settings when this verification started. Indicative — not a sanction.
       </p>
     </Card>
   );

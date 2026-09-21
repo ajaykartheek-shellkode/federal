@@ -50,6 +50,8 @@ export interface AppState {
   busy: Busy;
   /** A free-typed question is being answered (never blocks the workflow or other controls). */
   answering: boolean;
+  /** The pledged-inventory table is revealed on request ("show the pledged items") or by a step's results. */
+  showItems: boolean;
   dialog: DialogState | null;
   toasts: Toast[];
 }
@@ -61,6 +63,7 @@ export const initialState: AppState = {
   runs: {},
   busy: null,
   answering: false,
+  showItems: false,
   dialog: null,
   toasts: [],
 };
@@ -70,6 +73,7 @@ export type Action =
   | { type: "session"; session: SessionView | null }
   | { type: "busy"; busy: Busy }
   | { type: "answering"; value: boolean }
+  | { type: "show-items" }
   | { type: "bot"; html: string; animate?: boolean; samples?: SampleAccount[] }
   | { type: "user"; text: string }
   | { type: "notice"; level: "info" | "warn" | "error"; text: string }
@@ -98,6 +102,9 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case "answering":
       return { ...state, answering: action.value };
+
+    case "show-items":
+      return { ...state, showItems: true };
 
     case "bot":
       return {
