@@ -275,18 +275,15 @@ export default function InventoryTable({ session }: { session: SessionView }) {
   if (showReading) {
     columns.push(
       {
+        // Purity only — the weights are reconciled on the Weight & purity card.
         key: "reading",
-        header: "CaratMeter",
-        footer: weight.measured_g !== null ? <span className="font-semibold tabular-nums text-ink">{formatWeight(weight.measured_g)}</span> : undefined,
+        header: "CaratMeter purity",
         cell: ({ item }) => {
           const m = item.measurement;
           if (!m) return <span className="text-ink-faint">Not measured</span>;
-          const off = Math.abs(m.weight_g - item.weight_gm) > weight.item_tolerance_g + 1e-9;
           return (
             <motion.span key={m.measured_at} initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease }} className="inline-flex items-center gap-1.5 whitespace-nowrap">
-              <span className={cn("font-semibold tabular-nums", off ? "text-warn" : "text-ink")}>{formatWeight(m.weight_g)}</span>
-              <span className="text-ink-faint">·</span>
-              <span className="tabular-nums text-ink-muted">{m.fineness_pct.toFixed(2)}%</span>
+              <span className="font-semibold tabular-nums text-ink">{m.fineness_pct.toFixed(2)}%</span>
               <Badge tone={!m.grade ? "bad" : m.grade.replace(/K$/, "") !== item.carat ? "warn" : "ok"}>{m.grade ?? "Ungraded"}</Badge>
             </motion.span>
           );
