@@ -38,7 +38,7 @@ const config: Config = {
         surface: "#FFFFFF",
         subtle: "#F7F9FC",
         line: { DEFAULT: "#E3E8F0", strong: "#CBD5E2" },
-        ink: { DEFAULT: "#15223A", 2: "#414B5C", muted: "#6F7B8F", faint: "#A2ACBC" },
+        ink: { DEFAULT: "#15223A", 2: "#35404F", muted: "#58647A", faint: "#7C879A" },
         ok: { DEFAULT: "#0E9258", soft: "#E6F5EE", line: "#B8E2CD" },
         warn: { DEFAULT: "#C26A00", soft: "#FFF3E0", line: "#F6D6A4" },
         bad: { DEFAULT: "#D0342C", soft: "#FDEDEC", line: "#F4C3BF" },

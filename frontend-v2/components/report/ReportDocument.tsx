@@ -13,7 +13,7 @@ const PILL: Record<string, string> = {
   warn: "bg-[#FFF3E0] text-[#C26A00]",
   bad: "bg-[#FDEDEC] text-[#D0342C]",
   brand: "bg-[#EEF4FB] text-[#004E96]",
-  neutral: "bg-[#F3F6FA] text-[#6F7B8F]",
+  neutral: "bg-[#F3F6FA] text-[#58647A]",
   gold: "bg-[#FFF1D6] text-[#B26E00]",
 };
 
@@ -42,13 +42,13 @@ function Section({ n, title, children }: { n: number; title: string; children: R
 function KV({ k, v, mono }: { k: string; v: ReactNode; mono?: boolean }) {
   return (
     <div className="flex gap-2 text-[12px]">
-      <span className="w-28 shrink-0 text-[#6F7B8F]">{k}</span>
+      <span className="w-28 shrink-0 text-[#58647A]">{k}</span>
       <span className={cn("font-semibold text-[#15223A]", mono && "font-mono text-[11.5px]")}>{v || "—"}</span>
     </div>
   );
 }
 
-const th = "border-b border-[#E3E8F0] px-2 py-1.5 text-left text-[9.5px] font-bold uppercase tracking-wider text-[#6F7B8F]";
+const th = "border-b border-[#E3E8F0] px-2 py-1.5 text-left text-[9.5px] font-bold uppercase tracking-wider text-[#58647A]";
 const td = "border-b border-[#F0F3F8] px-2 py-1.5 align-middle text-[11.5px] text-[#15223A]";
 
 export default function ReportDocument({ session }: { session: SessionView }) {
@@ -65,15 +65,15 @@ export default function ReportDocument({ session }: { session: SessionView }) {
   const next = () => ++sectionNo;
 
   return (
-    <article className="report-page mx-auto w-[210mm] min-h-[297mm] bg-white px-[15mm] py-[14mm] text-[#414B5C] shadow-lift">
+    <article className="report-page mx-auto w-[210mm] min-h-[297mm] bg-white px-[15mm] py-[14mm] text-[#35404F] shadow-lift">
       {/* Letterhead */}
       <header className="flex items-start justify-between border-b-[3px] border-[#004E96] pb-4">
         <div>
           <FederalWordmark size={26} />
           <p className="mt-2 text-[18px] font-bold leading-tight text-[#15223A]">Gold Loan Collateral Verification Report</p>
-          <p className="text-[11px] text-[#6F7B8F]">AI-assisted validation · GL Portal</p>
+          <p className="text-[11px] text-[#58647A]">AI-assisted validation · GL Portal</p>
         </div>
-        <div className="text-right text-[11px] leading-relaxed text-[#6F7B8F]">
+        <div className="text-right text-[11px] leading-relaxed text-[#58647A]">
           <p className="font-mono text-[12px] font-bold text-[#15223A]">{report.report_id}</p>
           <p>{formatDateTime(report.generated_at)}</p>
           <p>Branch {loan.branch || "—"}</p>
@@ -88,7 +88,7 @@ export default function ReportDocument({ session }: { session: SessionView }) {
         )}
       >
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-wider text-[#6F7B8F]">Recommendation</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-[#58647A]">Recommendation</p>
           <p className={cn("text-[26px] font-bold leading-none", proceed ? "text-[#0E9258]" : "text-[#B26E00]")}>{report.recommendation}</p>
           <p className="mt-1 text-[11px]">{proceed ? "All checks satisfied." : `${report.reasons.filter((r) => r.level === "warn").length} point(s) for the approving officer.`}</p>
         </div>
@@ -101,7 +101,7 @@ export default function ReportDocument({ session }: { session: SessionView }) {
           ].map(([v, l]) => (
             <div key={l}>
               <p className="text-[18px] font-bold text-[#15223A]">{v}</p>
-              <p className="text-[9.5px] uppercase tracking-wider text-[#6F7B8F]">{l}</p>
+              <p className="text-[9.5px] uppercase tracking-wider text-[#58647A]">{l}</p>
             </div>
           ))}
         </div>
@@ -140,7 +140,7 @@ export default function ReportDocument({ session }: { session: SessionView }) {
                   {im.asset_id && <img src={assetUrl(im.asset_id)} alt={`Collateral photo ${im.index + 1}`} className="h-full w-full object-cover" />}
                 </div>
                 <div className="mt-1 flex items-center justify-between">
-                  <span className="text-[10px] text-[#6F7B8F]">Photo {im.index + 1}</span>
+                  <span className="text-[10px] text-[#58647A]">Photo {im.index + 1}</span>
                   <Result status={im.status} />
                 </div>
                 {im.issues[0] && <p className="mt-0.5 text-[9.5px] leading-tight text-[#C26A00]">{im.issues[0]}</p>}
@@ -215,9 +215,9 @@ export default function ReportDocument({ session }: { session: SessionView }) {
               ["CBS declared", formatWeight(weight.declared_g), `${stats.items} items`],
             ].map(([k, v, sub]) => (
               <div key={k} className="rounded-lg border border-[#E3E8F0] px-3 py-2">
-                <p className="text-[9.5px] font-bold uppercase tracking-wider text-[#6F7B8F]">{k}</p>
+                <p className="text-[9.5px] font-bold uppercase tracking-wider text-[#58647A]">{k}</p>
                 <p className="text-[15px] font-bold text-[#15223A]">{v}</p>
-                <p className="text-[10px] text-[#6F7B8F]">{sub}</p>
+                <p className="text-[10px] text-[#58647A]">{sub}</p>
               </div>
             ))}
           </div>
@@ -270,7 +270,7 @@ export default function ReportDocument({ session }: { session: SessionView }) {
             </tbody>
           </table>
           <div className="report-avoid-break mt-2.5 flex items-end justify-between gap-6">
-            <p className="max-w-[95mm] text-[10px] leading-snug text-[#6F7B8F]">
+            <p className="max-w-[95mm] text-[10px] leading-snug text-[#58647A]">
               Valued on {valuation.totals.is_estimate ? "CBS-declared" : "CaratMeter-measured"} weight at the rate for the {valuation.totals.is_estimate ? "declared" : "assessed"} purity × LTV, less the damage deduction ({DAMAGE_DEDUCTION_META[valuation.damage_deduction_mode].hint}). Rates as configured when the verification started. Indicative — not a sanction.
             </p>
             <div className="min-w-[64mm] text-[11.5px]">
@@ -280,7 +280,7 @@ export default function ReportDocument({ session }: { session: SessionView }) {
                 ["Less damage deduction", `−${formatINR(valuation.totals.damage_deduction)}`],
               ].map(([k, v]) => (
                 <div key={k} className="flex justify-between gap-4">
-                  <span className="text-[#6F7B8F]">{k}</span>
+                  <span className="text-[#58647A]">{k}</span>
                   <span>{v}</span>
                 </div>
               ))}
@@ -304,13 +304,13 @@ export default function ReportDocument({ session }: { session: SessionView }) {
                 <div className="min-w-0 flex-1 text-[11.5px]">
                   <div className="flex items-center justify-between gap-2">
                     <p className="font-semibold text-[#15223A]">
-                      {d.item} · {d.type} <span className="font-normal capitalize text-[#6F7B8F]">(assessor: {d.severity})</span>
+                      {d.item} · {d.type} <span className="font-normal capitalize text-[#58647A]">(assessor: {d.severity})</span>
                     </p>
                     <Result status={d.status} overridden={d.overridden} />
                   </div>
                   {d.assessor_details && <p>Recorded: {d.assessor_details}</p>}
                   {d.observed.length > 0 && <p>AI observed: {d.observed.join("; ")}{d.assessed_severity && d.assessed_severity !== "none" ? ` · ${d.assessed_severity}` : ""}</p>}
-                  {d.notes && <p className="text-[#6F7B8F]">{d.notes}</p>}
+                  {d.notes && <p className="text-[#58647A]">{d.notes}</p>}
                 </div>
               </div>
             ))}
@@ -395,10 +395,10 @@ export default function ReportDocument({ session }: { session: SessionView }) {
         </div>
       </section>
 
-      <footer className="mt-8 flex items-center justify-between border-t border-[#E3E8F0] pt-3 text-[9.5px] text-[#A2ACBC]">
+      <footer className="mt-8 flex items-center justify-between border-t border-[#E3E8F0] pt-3 text-[9.5px] text-[#7C879A]">
         <span>Federal Bank · GL Portal · AI-assisted validation on Amazon Bedrock · Advisory only</span>
         <span className="flex items-center gap-1.5">
-          Powered by <ShellkodeLogo className="h-[10px] w-auto text-[#6F7B8F]" />
+          Powered by <ShellkodeLogo className="h-[10px] w-auto text-[#58647A]" />
         </span>
       </footer>
     </article>

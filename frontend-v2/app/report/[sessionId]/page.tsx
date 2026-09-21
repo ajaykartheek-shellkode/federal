@@ -7,7 +7,7 @@ import { FederalWordmark } from "@/components/shell/Brand";
 import Button from "@/components/ui/Button";
 import Icon from "@/components/ui/Icon";
 import Spinner from "@/components/ui/Spinner";
-import { ApiError, getSession } from "@/lib/api";
+import { ApiError, getSession, reportPdfUrl } from "@/lib/api";
 import type { SessionView } from "@/lib/types";
 
 /** Standalone, printable verification report — shareable link and clean "Save as PDF". */
@@ -40,9 +40,18 @@ export default function ReportPage({ params }: { params: { sessionId: string } }
             >
               <Icon name="arrowRight" size={16} className="rotate-180" /> Open in portal
             </Link>
-            <Button variant="gold" icon="download" disabled={!session?.report} onClick={() => window.print()}>
-              Download PDF
+            <Button variant="secondary" icon="printer" disabled={!session?.report} onClick={() => window.print()}>
+              Print
             </Button>
+            {session?.report && (
+              <a
+                href={reportPdfUrl(params.sessionId)}
+                download={`${session.report.report_id}.pdf`}
+                className="inline-flex h-10 items-center gap-2 rounded-xl bg-gold-500 px-4 text-sm font-semibold text-brand-900 shadow-gold transition-colors hover:bg-gold-400"
+              >
+                <Icon name="download" size={16} /> Download PDF
+              </a>
+            )}
           </div>
         </div>
       </div>

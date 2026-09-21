@@ -37,8 +37,9 @@ npm run typecheck && npm run lint && npm run build
    recorded damage with the photo and rates severity; items are analysed in parallel.
 5. **Documents** — ID proof (image or multi-page PDF) with its type. The Document Verifier checks
    legibility/completeness and cross-verifies name, ID number and address against CBS.
-6. **Report** — PROCEED / REVIEW recommendation with reasons, weight & pledge valuation, audit trail and e-signatures; printable
-   as an A4 PDF (`/report/<sessionId>`).
+6. **Report** — PROCEED / REVIEW recommendation with reasons, weight & pledge valuation, audit trail
+   and e-signatures. **Download PDF** saves the server-generated A4 file; **Print** uses the browser
+   (`/report/<sessionId>` is the shareable printable page).
 
 Every step streams its real processing steps into the chat ("Agent executing"). In **alert mode**
 findings are advisory; in **blocker mode** unusable captures, unsighted items and undocumented CBS

@@ -4,6 +4,7 @@
   GET /api/reports/daily?date=YYYY-MM-DD     -> runs + rolled-up counts for a date
   GET /api/reports/account?account=...       -> runs + rolled-up counts for a loan account
   GET /api/reports/overview?days=7           -> per-day outcomes, totals and runs for a window
+  GET /api/reports/session/{id}/pdf          -> the verification report as a PDF file (download)
 """
 
 from __future__ import annotations
@@ -13,9 +14,14 @@ from datetime import date, datetime
 from typing import Optional
 
 from fastapi import APIRouter, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
-from app import cbs, store
+from app import cbs
+from app import session as session_store
+from app import store
+from app.report_pdf import build_report_pdf
+from app.settings import get_settings
+from app.workflow import state as S
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -46,6 +52,32 @@ async def report_daily(date: Optional[str] = None):
 @router.get("/account")
 async def report_account(account: str = Query(..., min_length=1, max_length=64)):
     return await asyncio.to_thread(store.account_summary, cbs.normalize_account(account))
+
+
+@router.get("/session/{session_id}/pdf")
+async def report_pdf(session_id: str, inline: bool = False):
+    """The finished verification report as a PDF file (same content as the printable page)."""
+    if not session_store.valid_id(session_id):
+        return JSONResponse(status_code=404, content={"error": "This verification session was not found."})
+    state = await asyncio.to_thread(session_store.load, session_id)
+    if state is None:
+        return JSONResponse(status_code=404, content={"error": "This verification session was not found."})
+    if not state.get("report"):
+        return JSONResponse(status_code=409, content={"error": "The report for this verification hasn't been generated yet."})
+
+    settings = await asyncio.to_thread(get_settings)
+    view = S.view(state, settings)
+    pdf = await asyncio.to_thread(build_report_pdf, view)
+    disposition = "inline" if inline else "attachment"
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'{disposition}; filename="{view["report"]["report_id"]}.pdf"',
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.get("/overview")

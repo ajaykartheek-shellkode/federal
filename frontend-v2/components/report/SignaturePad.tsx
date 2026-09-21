@@ -81,7 +81,7 @@ export default function SignaturePad({ role, name, detail }: { role: string; nam
   return (
     <div className="report-avoid-break flex-1 rounded-xl border border-[#E3E8F0] p-4">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-[#6F7B8F]">{role}</span>
+        <span className="text-[10px] font-bold uppercase tracking-wider text-[#58647A]">{role}</span>
         {!signed && (
           <div className="no-print flex gap-1">
             {(["draw", "type"] as Mode[]).map((m) => (
@@ -90,7 +90,7 @@ export default function SignaturePad({ role, name, detail }: { role: string; nam
                 onClick={() => setMode(m)}
                 className={cn(
                   "rounded-full px-2.5 py-0.5 text-[11px] font-semibold capitalize ring-1",
-                  mode === m ? "bg-[#EEF4FB] text-[#004E96] ring-[#B6CFEC]" : "text-[#6F7B8F] ring-[#E3E8F0] hover:text-[#15223A]"
+                  mode === m ? "bg-[#EEF4FB] text-[#004E96] ring-[#B6CFEC]" : "text-[#58647A] ring-[#E3E8F0] hover:text-[#15223A]"
                 )}
               >
                 {m}
@@ -102,7 +102,7 @@ export default function SignaturePad({ role, name, detail }: { role: string; nam
 
       {signed ? (
         <>
-          <div className="flex h-14 items-end border-b border-dashed border-[#A2ACBC] pb-1">
+          <div className="flex h-14 items-end border-b border-dashed border-[#7C879A] pb-1">
             {signed.image ? (
               <img src={signed.image} alt={`${role} signature`} className="max-h-[52px] max-w-full" />
             ) : (
@@ -111,7 +111,7 @@ export default function SignaturePad({ role, name, detail }: { role: string; nam
               </span>
             )}
           </div>
-          <div className="mt-2 flex items-center justify-between text-[11px] text-[#414B5C]">
+          <div className="mt-2 flex items-center justify-between text-[11px] text-[#35404F]">
             <span>{detail}</span>
             <span>{signed.at}</span>
           </div>
@@ -123,7 +123,7 @@ export default function SignaturePad({ role, name, detail }: { role: string; nam
               </svg>
               e-Signed
             </span>
-            <button onClick={() => setSigned(null)} className="no-print text-[11px] text-[#6F7B8F] underline-offset-2 hover:underline">
+            <button onClick={() => setSigned(null)} className="no-print text-[11px] text-[#58647A] underline-offset-2 hover:underline">
               Re-sign
             </button>
           </div>
@@ -141,7 +141,7 @@ export default function SignaturePad({ role, name, detail }: { role: string; nam
                 className="h-16 w-full cursor-crosshair touch-none rounded-lg border border-[#E3E8F0] bg-[#F7F9FC]"
                 aria-label={`${role} signature pad`}
               />
-              {!hasInk && <span className="no-print pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-[#A2ACBC]">Sign here</span>}
+              {!hasInk && <span className="no-print pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-[#7C879A]">Sign here</span>}
             </div>
           ) : (
             <input
@@ -153,10 +153,10 @@ export default function SignaturePad({ role, name, detail }: { role: string; nam
             />
           )}
           <div className="no-print mt-2 flex items-center justify-between">
-            <span className="text-[11px] text-[#6F7B8F]">{detail}</span>
+            <span className="text-[11px] text-[#58647A]">{detail}</span>
             <div className="flex items-center gap-2">
               {mode === "draw" && hasInk && (
-                <button onClick={clear} className="text-[11px] text-[#6F7B8F] hover:underline">
+                <button onClick={clear} className="text-[11px] text-[#58647A] hover:underline">
                   Clear
                 </button>
               )}

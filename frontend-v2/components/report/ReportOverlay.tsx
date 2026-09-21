@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useVerification } from "@/components/providers/VerificationProvider";
+import { reportPdfUrl } from "@/lib/api";
 import Button from "@/components/ui/Button";
 import Icon from "@/components/ui/Icon";
 import { ease } from "@/lib/motion";
@@ -56,9 +57,16 @@ export default function ReportOverlay({ open, onClose }: { open: boolean; onClos
               >
                 <Icon name="external" size={16} /> Open in new tab
               </a>
-              <Button variant="gold" icon="download" onClick={() => window.print()}>
-                Download PDF
+              <Button variant="secondary" icon="printer" onClick={() => window.print()}>
+                Print
               </Button>
+              <a
+                href={reportPdfUrl(session.session_id)}
+                download={`${session.report.report_id}.pdf`}
+                className="inline-flex h-10 items-center gap-2 rounded-xl bg-gold-500 px-4 text-sm font-semibold text-brand-900 shadow-gold transition-colors hover:bg-gold-400"
+              >
+                <Icon name="download" size={16} /> Download PDF
+              </a>
               <Button variant="secondary" icon="x" onClick={onClose}>
                 Close
               </Button>

@@ -273,6 +273,28 @@ def test_answer_uses_session_context(client, fake_bedrock):
     assert client.post("/api/chat/answer", json={"session_id": "0" * 32, "question": "hi"}).status_code == 404
 
 
+def test_report_pdf_download(client, fake_bedrock):
+    fake_bedrock.scale_weight_g = 90.02
+    sid = start(client)["session_id"]
+    assert client.get(f"/api/reports/session/{sid}/pdf").status_code == 409  # no report yet
+
+    step(client, sid, "collateral", files=[("collateral_images", photo())])
+    step(client, sid, "measure")
+    for ref in ("bangle-1", "ring-3"):
+        client.post("/api/chat/override", json={"session_id": sid, "target": "damage", "ref": ref, "justification": "No damage on inspection"})
+    step(client, sid, "continue")
+    step(client, sid, "document", files=[("documents", photo())], document_types=json.dumps(["Aadhaar Card"]))
+    _, _, s = step(client, sid, "report")
+
+    res = client.get(f"/api/reports/session/{sid}/pdf")
+    assert res.status_code == 200 and res.headers["content-type"] == "application/pdf"
+    assert res.headers["content-disposition"] == f'attachment; filename="{s["report"]["report_id"]}.pdf"'
+    assert res.content.startswith(b"%PDF") and len(res.content) > 5000
+    assert client.get(f"/api/reports/session/{sid}/pdf?inline=true").headers["content-disposition"].startswith("inline")
+    assert client.get("/api/reports/session/nope/pdf").status_code == 404
+    assert client.get(f"/api/reports/session/{'f' * 32}/pdf").status_code == 404
+
+
 def test_assets_reject_bad_ids(client):
     assert client.get("/api/assets/../../etc").status_code == 404
     assert client.get("/api/assets/" + "a" * 32).status_code == 404

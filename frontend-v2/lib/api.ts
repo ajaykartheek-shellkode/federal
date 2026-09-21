@@ -205,4 +205,8 @@ export const fetchOverview = (days = 7) => request<OverviewReport>(`/api/reports
 
 export const assetUrl = (id: string | null | undefined) => (id ? `/api/assets/${id}` : "");
 
+/** Server-rendered PDF of a finished verification report (download, or inline for a preview tab). */
+export const reportPdfUrl = (sessionId: string, inline = false) =>
+  `/api/reports/session/${encodeURIComponent(sessionId)}/pdf${inline ? "?inline=true" : ""}`;
+
 export type { SampleAccount };

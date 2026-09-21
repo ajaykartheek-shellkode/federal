@@ -8,7 +8,7 @@ import Button from "@/components/ui/Button";
 import { AnimatedNumber } from "@/components/ui/Controls";
 import Icon, { type IconName } from "@/components/ui/Icon";
 import Thumb from "@/components/ui/Thumb";
-import { assetUrl } from "@/lib/api";
+import { assetUrl, reportPdfUrl } from "@/lib/api";
 import { cn, formatDate, formatDateTime, formatINR, plural } from "@/lib/format";
 import { ease } from "@/lib/motion";
 import type { CountTriple, CountsByKind, OverviewReport, ResultStatus, RunImage, RunRecord } from "@/lib/types";
@@ -237,7 +237,7 @@ export function RunCard({ run, defaultOpen = false }: { run: RunRecord; defaultO
       <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="flex w-full items-center gap-4 px-4 py-3 text-left transition-colors hover:bg-subtle">
         <span
           className="h-9 w-1 shrink-0 rounded-full"
-          style={{ background: STATUS_MARK[run.overall_status] ?? "#A2ACBC" }}
+          style={{ background: STATUS_MARK[run.overall_status] ?? "#7C879A" }}
           aria-hidden
         />
         <div className="min-w-0 flex-1">
@@ -281,6 +281,15 @@ export function RunCard({ run, defaultOpen = false }: { run: RunRecord; defaultO
               </div>
               {run.session_id && (
                 <div className="mt-4 flex justify-end gap-2">
+                  {run.summary.report_id && (
+                    <a
+                      href={reportPdfUrl(run.session_id)}
+                      download={`${run.summary.report_id}.pdf`}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-brand-700 transition-colors hover:bg-brand-50"
+                    >
+                      <Icon name="download" size={14} /> Download PDF
+                    </a>
+                  )}
                   {run.summary.report_id && (
                     <a
                       href={`/report/${run.session_id}`}
