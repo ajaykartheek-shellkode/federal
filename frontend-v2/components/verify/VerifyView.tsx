@@ -19,6 +19,7 @@ const FOCUS_CARD: Record<WorkflowState, string> = {
   collateral: "card-collateral",
   weight: "card-weight",
   damage: "card-inventory",
+  valuation: "card-pledge",
   document: "card-documents",
   report: "card-documents",
   done: "card-report",
@@ -82,6 +83,8 @@ export default function VerifyView() {
   const weighs = session.steps.includes("weight");
   // The pledged inventory stays off screen until the assessor asks for it, or a step produces results for it.
   const showItems = state.showItems || session.collateral.images.length > 0;
+  // The pledge amount is its own step, reviewed once damage is recorded.
+  const showPledge = weighs && ["valuation", "document", "report", "done"].includes(session.workflow_state);
 
   return (
     <div ref={scrollRef} className="relative h-full overflow-y-auto">
@@ -96,7 +99,7 @@ export default function VerifyView() {
         <CollateralPhotos session={session} />
         {weighs && <WeightPurityCard session={session} />}
         {showItems && <InventoryTable session={session} />}
-        {weighs && showItems && <PledgeCard session={session} />}
+        {showPledge && <PledgeCard session={session} />}
         {showDocuments && <DocumentsCard session={session} />}
         <AuditTrail session={session} />
       </div>

@@ -3,7 +3,7 @@
 export type CheckStatus = "pass" | "alert" | "fail";
 export type ResultStatus = CheckStatus | "not_checked";
 export type ItemStatus = "pending" | "verified" | "overridden" | "manual";
-export type WorkflowState = "collateral" | "weight" | "damage" | "document" | "report" | "done";
+export type WorkflowState = "collateral" | "weight" | "damage" | "valuation" | "document" | "report" | "done";
 export type StepAction = "collateral" | "measure" | "damage" | "document" | "continue" | "report";
 export type MeasurementStatus = "pending" | "match" | "weight_mismatch" | "purity_low" | "mismatch" | "missing";
 export type Severity = "minor" | "moderate" | "severe";

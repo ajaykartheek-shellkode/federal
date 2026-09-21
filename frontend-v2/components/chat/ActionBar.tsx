@@ -78,6 +78,20 @@ export default function ActionBar() {
       showGate = blocked;
       break;
     }
+    case "valuation": {
+      primary = (
+        <Button variant="gold" iconRight="arrowRight" disabled={busy || blocked} onClick={() => runStep("continue")}>
+          Continue to documents
+        </Button>
+      );
+      secondary = (
+        <Button variant="secondary" icon="alert" onClick={() => openDialog({ kind: "damage" })}>
+          Record damage
+        </Button>
+      );
+      showGate = blocked;
+      break;
+    }
     case "document":
       primary = (
         <Button variant="gold" icon="idCard" onClick={() => openDialog({ kind: "document" })}>

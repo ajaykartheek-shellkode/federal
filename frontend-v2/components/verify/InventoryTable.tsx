@@ -6,42 +6,34 @@ import { useVerification } from "@/components/providers/VerificationProvider";
 import { Badge, ItemBadge, ResultBadge } from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import { Card, CardHeader } from "@/components/ui/Card";
-import { Segmented } from "@/components/ui/Controls";
 import Icon from "@/components/ui/Icon";
 import Thumb from "@/components/ui/Thumb";
 import { assetUrl } from "@/lib/api";
-import { cn, formatINR, formatWeight, formatWeightDelta, MEASURE_META, plural, purityLabel } from "@/lib/format";
+import { cn, formatINR, formatWeight, MEASURE_META, plural, purityLabel } from "@/lib/format";
 import { ease } from "@/lib/motion";
 import type { DamageEntry, InventoryItem, ItemStatus, SessionView, ValuedItem } from "@/lib/types";
 
 /**
- * The single collateral table for the whole verification: one row per pledged item, with the
- * columns of the step in progress (sighting → weight & purity → valuation). Damage records appear
- * as a detail row under their item, so no step ever adds a second table.
+ * The one collateral table of the verification: a row per pledged item, gaining the columns of
+ * each step as it completes — sighting, then the CaratMeter reading, then damage, then the pledge
+ * amount. Damage records open as a detail row under their item, so no step adds a second table.
  */
-export type TableMode = "sighting" | "weight" | "valuation";
-
-const MODES: { value: TableMode; label: string }[] = [
-  { value: "sighting", label: "Sighting" },
-  { value: "weight", label: "Weight & purity" },
-  { value: "valuation", label: "Valuation" },
-];
-
 const FLAGGED = ["weight_mismatch", "purity_low", "mismatch", "missing"];
 
-/** The columns that belong to the step the session is on. */
-export function modeForStep(session: SessionView): TableMode {
-  switch (session.workflow_state) {
-    case "weight":
-    case "damage": // the readings just fetched stay on screen; damage shows as a detail row
-      return "weight";
-    case "document":
-    case "report":
-    case "done":
-      return "valuation";
-    default:
-      return "sighting";
-  }
+interface RowContext {
+  item: InventoryItem;
+  valued?: ValuedItem;
+  damage?: DamageEntry;
+  session: SessionView;
+}
+
+interface Column {
+  key: string;
+  header: string;
+  align?: "right";
+  width?: string;
+  cell: (ctx: RowContext) => ReactNode;
+  footer?: ReactNode;
 }
 
 /** Flash a row when its sighting status changes (e.g. pending → verified). */
@@ -55,7 +47,7 @@ function useFlash(status: ItemStatus) {
   return flash;
 }
 
-function IconAction({ icon, label, onClick }: { icon: "pen" | "alert" | "shieldCheck"; label: string; onClick: () => void }) {
+function IconAction({ icon, label, onClick }: { icon: "pen" | "alert"; label: string; onClick: () => void }) {
   return (
     <button
       type="button"
@@ -69,169 +61,48 @@ function IconAction({ icon, label, onClick }: { icon: "pen" | "alert" | "shieldC
   );
 }
 
-function Cell({ children, className }: { children: ReactNode; className?: string }) {
-  return <td className={cn("border-b border-line py-2.5 pr-3 align-middle", className)}>{children}</td>;
+function DamageChip({ item, damage }: { item: InventoryItem; damage?: DamageEntry }) {
+  if (damage) return <ResultBadge status={damage.status} overridden={damage.overridden} />;
+  if (item.cbs_damage) {
+    return item.cbs_damage_waived ? (
+      <Badge tone="neutral" title="CBS-declared damage waived by the assessor">
+        Waived
+      </Badge>
+    ) : (
+      <Badge tone="warn" dot title={item.cbs_damage_details}>
+        Not recorded
+      </Badge>
+    );
+  }
+  return <span className="text-ink-faint">—</span>;
 }
 
-function ItemRow({
-  item,
-  valued,
-  session,
-  mode,
-  damage,
-}: {
-  item: InventoryItem;
-  valued?: ValuedItem;
-  session: SessionView;
-  mode: TableMode;
-  damage?: DamageEntry;
-}) {
-  const { openDialog } = useVerification();
-  const flash = useFlash(item.status);
-  const locked = session.workflow_state === "done";
-  const damagePending = session.cbs_damage_pending.includes(item.id);
-  const canRecordDamage = session.allowed_actions.includes("damage");
-  const hasPhotos = session.collateral.images.length > 0;
-  const m = item.measurement;
-  const status = item.measurement_status ?? "pending";
-  const flagged = FLAGGED.includes(status);
-  const delta = m ? m.weight_g - item.weight_gm : 0;
-  const weightOff = m && Math.abs(delta) > session.weight.item_tolerance_g + 1e-9;
-  const border = damage ? "border-b-0" : "border-b border-line";
+function ItemRow({ ctx, columns }: { ctx: RowContext; columns: Column[] }) {
+  const flash = useFlash(ctx.item.status);
+  const border = ctx.damage ? "border-b-0" : "border-b border-line";
 
   return (
     <motion.tr
       layout="position"
-      key={`${item.id}-${flash}`}
+      key={`${ctx.item.id}-${flash}`}
       initial={flash ? { backgroundColor: "rgba(250,166,25,0.16)" } : false}
       animate={{ backgroundColor: "rgba(250,166,25,0)" }}
       transition={{ duration: 1.4, ease }}
       className="group"
     >
-      <td className={cn("py-2.5 pl-5 pr-3", border)}>
-        <Thumb
-          assetId={item.thumb_asset_id}
-          alt={item.name}
-          size={44}
-          onClick={
-            item.thumb_asset_id
-              ? () => openDialog({ kind: "lightbox", src: assetUrl(item.thumb_asset_id), title: item.name, caption: "Cropped from the collateral photo" })
-              : undefined
-          }
-        />
-      </td>
-
-      <td className={cn("py-2.5 pr-3", border)}>
-        <p className="font-semibold text-ink">
-          {item.name}
-          {item.quantity > 1 && <span className="ml-1 text-xs font-normal text-ink-muted">×{item.quantity}</span>}
-        </p>
-        <p className="mt-0.5 flex items-center gap-2 font-mono text-2xs text-ink-faint">
-          {item.id}
-          {item.cbs_damage && (
-            <span className="font-sans" title={item.cbs_damage_details}>
-              <Badge tone={damagePending ? "warn" : item.cbs_damage_waived ? "neutral" : "gold"}>
-                {item.cbs_damage_waived ? "CBS damage waived" : "CBS: damage"}
-              </Badge>
-            </span>
+      {columns.map((col, i) => (
+        <td
+          key={col.key}
+          className={cn(
+            "py-2.5 align-middle",
+            border,
+            i === 0 ? "pl-5 pr-3" : i === columns.length - 1 ? "pr-4" : "pr-3",
+            col.align === "right" && "text-right"
           )}
-        </p>
-      </td>
-
-      {mode === "sighting" && (
-        <>
-          <Cell className={cn(border, "text-ink-2")}>
-            {purityLabel(item)}
-            {item.material && item.material !== "gold" && <span className="block text-2xs capitalize text-ink-faint">{item.material}</span>}
-          </Cell>
-          <Cell className={cn(border, "tabular-nums text-ink-2")}>{formatWeight(item.weight_gm)}</Cell>
-          <Cell className={border}>
-            <motion.span
-              key={item.status}
-              initial={{ scale: 0.85, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ type: "spring", stiffness: 500, damping: 24 }}
-              className="inline-block"
-            >
-              <ItemBadge status={item.status} awaitingPhoto={!hasPhotos} />
-            </motion.span>
-          </Cell>
-        </>
-      )}
-
-      {mode === "weight" && (
-        <>
-          <Cell className={cn(border, "whitespace-nowrap text-ink-2")}>
-            <span className="font-semibold text-ink">{purityLabel(item)}</span> · {formatWeight(item.weight_gm)}
-          </Cell>
-          <Cell className={cn(border, "whitespace-nowrap")}>
-            {m ? (
-              <motion.span key={m.measured_at} initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease }} className="inline-flex items-center gap-1.5">
-                <span className={cn("font-semibold tabular-nums", weightOff ? "text-warn" : "text-ink")}>{formatWeight(m.weight_g)}</span>
-                <span className="text-ink-faint">·</span>
-                <span className="tabular-nums text-ink-muted">{m.fineness_pct.toFixed(2)}%</span>
-                <Badge tone={!m.grade ? "bad" : m.grade.replace(/K$/, "") !== item.carat ? "warn" : "ok"}>{m.grade ?? "Ungraded"}</Badge>
-              </motion.span>
-            ) : (
-              <span className="text-ink-faint">Not measured</span>
-            )}
-          </Cell>
-          <Cell className={cn(border, "whitespace-nowrap text-right font-mono text-xs tabular-nums", weightOff ? "font-semibold text-warn" : "text-ink-muted")}>
-            {m ? formatWeightDelta(delta) : "—"}
-          </Cell>
-          <Cell className={border}>
-            {item.measurement_overridden ? (
-              <Badge tone="brand" icon="pen" title={MEASURE_META[status].label}>
-                Accepted
-              </Badge>
-            ) : (
-              <Badge tone={MEASURE_META[status].tone} dot title={MEASURE_META[status].hint}>
-                {MEASURE_META[status].label}
-              </Badge>
-            )}
-          </Cell>
-        </>
-      )}
-
-      {mode === "valuation" && (
-        <>
-          <Cell className={cn(border, "whitespace-nowrap text-right tabular-nums text-ink-2")}>
-            {formatWeight(valued?.weight_g ?? item.weight_gm)}
-            <span className={cn("block text-2xs", valued?.weight_basis === "measured" ? "text-ok" : "text-ink-faint")}>
-              {valued?.weight_basis === "measured" ? "measured" : "declared"}
-            </span>
-          </Cell>
-          <Cell className={border}>{valued?.grade ? <Badge tone="neutral">{valued.grade}</Badge> : <Badge tone="bad">No rate</Badge>}</Cell>
-          <Cell className={cn(border, "whitespace-nowrap text-right tabular-nums text-ink-2")}>{formatINR(valued?.rate_per_gram ?? 0)}</Cell>
-          <Cell className={cn(border, "whitespace-nowrap text-right tabular-nums text-ink-muted")}>
-            {valued && valued.damage_deduction > 0 ? `−${formatINR(valued.damage_deduction)}` : "—"}
-            {item.damage_percent > 0 && <span className="block text-2xs text-ink-faint">CBS {item.damage_percent}</span>}
-          </Cell>
-          <Cell className={cn(border, "whitespace-nowrap text-right font-semibold tabular-nums text-ink")}>{formatINR(valued?.pledge_amount ?? 0)}</Cell>
-        </>
-      )}
-
-      <td className={cn("py-2.5 pr-4 text-right", border)}>
-        <div className="flex items-center justify-end gap-0.5 opacity-80 transition-opacity group-hover:opacity-100">
-          {mode === "weight" && flagged && !item.measurement_overridden && !locked && (
-            <Button size="sm" variant="secondary" icon="shieldCheck" onClick={() => openDialog({ kind: "override", target: "measurement", ref: item.id })}>
-              Accept
-            </Button>
-          )}
-          {item.status === "pending" && hasPhotos && !locked && (
-            <Button size="sm" variant="secondary" icon="shieldCheck" onClick={() => openDialog({ kind: "override", target: "item", ref: item.id })}>
-              Confirm
-            </Button>
-          )}
-          {damagePending && !locked && !["collateral", "weight"].includes(session.workflow_state) && (
-            <Button size="sm" variant="ghost" onClick={() => openDialog({ kind: "override", target: "damage", ref: item.id })}>
-              Waive
-            </Button>
-          )}
-          {canRecordDamage && <IconAction icon="alert" label={`Record damage for ${item.name}`} onClick={() => openDialog({ kind: "damage", ornamentId: item.id })} />}
-          {!locked && <IconAction icon="pen" label={`Correct ${item.name}`} onClick={() => openDialog({ kind: "edit", ref: item.id })} />}
-        </div>
-      </td>
+        >
+          {col.cell(ctx)}
+        </td>
+      ))}
     </motion.tr>
   );
 }
@@ -319,45 +190,190 @@ function DamageRow({ damage, session, columns }: { damage: DamageEntry; session:
   );
 }
 
-const HEADERS: Record<TableMode, { label: string; align?: "right" }[]> = {
-  sighting: [{ label: "Purity" }, { label: "Weight" }, { label: "Status" }],
-  weight: [{ label: "CBS declared" }, { label: "CaratMeter reading" }, { label: "Δ weight", align: "right" }, { label: "Result" }],
-  valuation: [
-    { label: "Weight", align: "right" },
-    { label: "Grade" },
-    { label: "Rate / g", align: "right" },
-    { label: "Damage", align: "right" },
-    { label: "Pledge", align: "right" },
-  ],
-};
-
 export default function InventoryTable({ session }: { session: SessionView }) {
-  const { stats, inventory, damages, valuation } = session;
+  const { openDialog } = useVerification();
+  const { stats, inventory, damages, valuation, weight } = session;
   const byItem = new Map(damages.map((d) => [d.ornament_id, d]));
   const valuedById = new Map(valuation.items.map((v) => [v.ornament_id, v]));
-  const cbsPending = session.cbs_damage_pending.length;
-  const step = modeForStep(session);
-  const [mode, setMode] = useState<TableMode>(step);
-  const stepRef = useRef(step);
-
-  // The table follows the workflow; a manual switch holds until the next step begins.
-  useEffect(() => {
-    if (stepRef.current !== step) {
-      stepRef.current = step;
-      setMode(step);
-    }
-  }, [step]);
-
-  const headers = HEADERS[mode];
-  const columns = headers.length + 3;
+  const locked = session.workflow_state === "done";
+  const hasPhotos = session.collateral.images.length > 0;
+  const canRecordDamage = session.allowed_actions.includes("damage");
   const totals = valuation.totals;
 
-  const subtitle =
-    mode === "valuation"
-      ? `${plural(stats.items, "item")} · ${formatWeight(totals.weight_g)} ${totals.is_estimate ? "declared" : "measured"} · ${formatINR(totals.pledge_amount)}`
-      : mode === "weight"
-        ? `${stats.measured}/${stats.items} measured · tolerance ±${formatWeight(session.weight.item_tolerance_g)} · ${session.weight.purity_tolerance_pct} pts purity`
-        : `From CBS · ${plural(stats.items, "item")} · ${plural(stats.pieces, "piece")} · ${formatWeight(stats.total_weight)}`;
+  // Columns appear as their step is reached, and stay for the rest of the verification.
+  const steps: string[] = session.steps ?? [];
+  const reached = (step: string) => {
+    if (session.workflow_state === "done") return true;
+    const at = steps.indexOf(session.workflow_state);
+    const of = steps.indexOf(step);
+    return of >= 0 && at >= of;
+  };
+  const showReading = reached("weight") && (!!session.measurements || session.workflow_state === "weight");
+  const showDamage = reached("damage") || damages.length > 0;
+  const showPledge = steps.includes("valuation") ? reached("valuation") : reached("document");
+
+  const columns: Column[] = [
+    {
+      key: "thumb",
+      header: "",
+      width: "w-[76px]",
+      cell: ({ item }) => (
+        <Thumb
+          assetId={item.thumb_asset_id}
+          alt={item.name}
+          size={44}
+          onClick={
+            item.thumb_asset_id
+              ? () => openDialog({ kind: "lightbox", src: assetUrl(item.thumb_asset_id), title: item.name, caption: "Cropped from the collateral photo" })
+              : undefined
+          }
+        />
+      ),
+    },
+    {
+      key: "item",
+      header: "Item",
+      footer: <span className="font-bold text-ink">Total</span>,
+      cell: ({ item }) => (
+        <>
+          <p className="font-semibold text-ink">
+            {item.name}
+            {item.quantity > 1 && <span className="ml-1 text-xs font-normal text-ink-muted">×{item.quantity}</span>}
+          </p>
+          <p className="mt-0.5 font-mono text-2xs text-ink-faint">{item.id}</p>
+        </>
+      ),
+    },
+    {
+      key: "declared",
+      header: "CBS declared",
+      footer: <span className="font-semibold tabular-nums text-ink">{formatWeight(stats.total_weight)}</span>,
+      cell: ({ item }) => (
+        <span className="whitespace-nowrap text-ink-2">
+          <span className="font-semibold text-ink">{purityLabel(item)}</span> · {formatWeight(item.weight_gm)}
+          {item.material && item.material !== "gold" && <span className="block text-2xs capitalize text-ink-faint">{item.material}</span>}
+        </span>
+      ),
+    },
+    {
+      key: "sighting",
+      header: "Sighting",
+      cell: ({ item }) => (
+        <motion.span
+          key={item.status}
+          initial={{ scale: 0.85, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: "spring", stiffness: 500, damping: 24 }}
+          className="inline-block"
+        >
+          <ItemBadge status={item.status} awaitingPhoto={!hasPhotos} />
+        </motion.span>
+      ),
+    },
+  ];
+
+  if (showReading) {
+    columns.push(
+      {
+        key: "reading",
+        header: "CaratMeter",
+        footer: weight.measured_g !== null ? <span className="font-semibold tabular-nums text-ink">{formatWeight(weight.measured_g)}</span> : undefined,
+        cell: ({ item }) => {
+          const m = item.measurement;
+          if (!m) return <span className="text-ink-faint">Not measured</span>;
+          const off = Math.abs(m.weight_g - item.weight_gm) > weight.item_tolerance_g + 1e-9;
+          return (
+            <motion.span key={m.measured_at} initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease }} className="inline-flex items-center gap-1.5 whitespace-nowrap">
+              <span className={cn("font-semibold tabular-nums", off ? "text-warn" : "text-ink")}>{formatWeight(m.weight_g)}</span>
+              <span className="text-ink-faint">·</span>
+              <span className="tabular-nums text-ink-muted">{m.fineness_pct.toFixed(2)}%</span>
+              <Badge tone={!m.grade ? "bad" : m.grade.replace(/K$/, "") !== item.carat ? "warn" : "ok"}>{m.grade ?? "Ungraded"}</Badge>
+            </motion.span>
+          );
+        },
+      },
+      {
+        key: "result",
+        header: "Reading",
+        cell: ({ item }) => {
+          const status = item.measurement_status ?? "pending";
+          return item.measurement_overridden ? (
+            <Badge tone="brand" icon="pen" title={MEASURE_META[status].label}>
+              Accepted
+            </Badge>
+          ) : (
+            <Badge tone={MEASURE_META[status].tone} dot title={MEASURE_META[status].hint}>
+              {MEASURE_META[status].label}
+            </Badge>
+          );
+        },
+      }
+    );
+  }
+
+  if (showDamage) {
+    columns.push({
+      key: "damage",
+      header: "Damage",
+      cell: ({ item, damage }) => <DamageChip item={item} damage={damage} />,
+    });
+  }
+
+  if (showPledge) {
+    columns.push({
+      key: "pledge",
+      header: "Pledge",
+      align: "right",
+      footer: <span className="font-bold tabular-nums text-brand-700">{formatINR(totals.pledge_amount)}</span>,
+      cell: ({ valued }) => (
+        <span className="whitespace-nowrap">
+          <span className="font-semibold tabular-nums text-ink">{formatINR(valued?.pledge_amount ?? 0)}</span>
+          <span className={cn("block text-2xs", valued?.weight_basis === "measured" ? "text-ok" : "text-ink-faint")}>
+            {valued?.weight_basis === "measured" ? "on measured wt" : "on declared wt"}
+          </span>
+        </span>
+      ),
+    });
+  }
+
+  columns.push({
+    key: "actions",
+    header: "Actions",
+    align: "right",
+    cell: ({ item }) => {
+      const flagged = FLAGGED.includes(item.measurement_status ?? "pending") && !item.measurement_overridden;
+      const damagePending = session.cbs_damage_pending.includes(item.id);
+      return (
+        <div className="flex items-center justify-end gap-0.5 opacity-80 transition-opacity group-hover:opacity-100">
+          {showReading && flagged && !locked && (
+            <Button size="sm" variant="secondary" icon="shieldCheck" onClick={() => openDialog({ kind: "override", target: "measurement", ref: item.id })}>
+              Accept
+            </Button>
+          )}
+          {item.status === "pending" && hasPhotos && !locked && (
+            <Button size="sm" variant="secondary" icon="shieldCheck" onClick={() => openDialog({ kind: "override", target: "item", ref: item.id })}>
+              Confirm
+            </Button>
+          )}
+          {damagePending && !locked && showDamage && (
+            <Button size="sm" variant="ghost" onClick={() => openDialog({ kind: "override", target: "damage", ref: item.id })}>
+              Waive
+            </Button>
+          )}
+          {canRecordDamage && <IconAction icon="alert" label={`Record damage for ${item.name}`} onClick={() => openDialog({ kind: "damage", ornamentId: item.id })} />}
+          {!locked && <IconAction icon="pen" label={`Correct ${item.name}`} onClick={() => openDialog({ kind: "edit", ref: item.id })} />}
+        </div>
+      );
+    },
+  });
+
+  const subtitle = [
+    `From CBS · ${plural(stats.items, "item")} · ${plural(stats.pieces, "piece")} · ${formatWeight(stats.total_weight)}`,
+    showReading && weight.measured_g !== null ? `CaratMeter ${formatWeight(weight.measured_g)}` : null,
+    showPledge ? `pledge ${formatINR(totals.pledge_amount)}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <Card id="card-inventory">
@@ -367,27 +383,26 @@ export default function InventoryTable({ session }: { session: SessionView }) {
         subtitle={subtitle}
         actions={
           <div className="flex flex-wrap items-center justify-end gap-2">
-            {mode === "sighting" && stats.pending > 0 && session.collateral.images.length > 0 && (
+            {stats.pending > 0 && hasPhotos && (
               <Badge tone="warn" dot>
                 {stats.pending} not sighted
               </Badge>
             )}
-            {mode === "weight" && session.weight.flagged > 0 && (
+            {showReading && weight.flagged > 0 && (
               <Badge tone="warn" dot>
-                {session.weight.flagged} to review
+                {weight.flagged} reading{weight.flagged === 1 ? "" : "s"} to review
               </Badge>
             )}
-            {mode === "valuation" && (
+            {session.cbs_damage_pending.length > 0 && (
+              <Badge tone="gold" icon="alert">
+                {session.cbs_damage_pending.length} CBS damage to record
+              </Badge>
+            )}
+            {showPledge && (
               <Badge tone={totals.is_estimate ? "gold" : "ok"} icon={totals.is_estimate ? "info" : "check"}>
                 {totals.is_estimate ? "Estimate" : "Measured"}
               </Badge>
             )}
-            {cbsPending > 0 && (
-              <Badge tone="gold" icon="alert">
-                {cbsPending} CBS damage to record
-              </Badge>
-            )}
-            <Segmented layoutId="inventory-mode" size="sm" value={mode} options={MODES} onChange={setMode} />
           </div>
         }
       />
@@ -395,41 +410,41 @@ export default function InventoryTable({ session }: { session: SessionView }) {
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="border-y border-line bg-subtle text-left text-2xs font-bold uppercase tracking-wider text-ink-muted">
-              <th className="w-[76px] py-2 pl-5" />
-              <th className="py-2 pr-3">Item</th>
-              {headers.map((h) => (
-                <th key={h.label} className={cn("py-2 pr-3", h.align === "right" && "text-right")}>
-                  {h.label}
+              {columns.map((col, i) => (
+                <th
+                  key={col.key}
+                  className={cn("py-2", col.width, i === 0 ? "pl-5 pr-3" : i === columns.length - 1 ? "pr-4" : "pr-3", col.align === "right" && "text-right")}
+                >
+                  {col.header}
                 </th>
               ))}
-              <th className="py-2 pr-4 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
             <AnimatePresence initial={false}>
               {inventory.map((item) => {
                 const damage = byItem.get(item.id);
+                const ctx: RowContext = { item, valued: valuedById.get(item.id), damage, session };
                 return (
                   <Fragment key={item.id}>
-                    <ItemRow item={item} valued={valuedById.get(item.id)} session={session} mode={mode} damage={damage} />
-                    {damage && <DamageRow key={`${item.id}-damage-${damage.recorded_at}`} damage={damage} session={session} columns={columns} />}
+                    <ItemRow ctx={ctx} columns={columns} />
+                    {damage && <DamageRow key={`${item.id}-damage-${damage.recorded_at}`} damage={damage} session={session} columns={columns.length} />}
                   </Fragment>
                 );
               })}
             </AnimatePresence>
           </tbody>
-          {mode === "valuation" && (
+          {showPledge && (
             <tfoot>
               <tr className="bg-subtle/70">
-                <td />
-                <td className="py-2.5 pr-3 font-bold text-ink">Total</td>
-                <td className="py-2.5 pr-3 text-right font-semibold tabular-nums text-ink">{formatWeight(totals.weight_g)}</td>
-                <td colSpan={2} />
-                <td className="py-2.5 pr-3 text-right tabular-nums text-ink-muted">
-                  {totals.damage_deduction > 0 ? `−${formatINR(totals.damage_deduction)}` : "—"}
-                </td>
-                <td className="py-2.5 pr-3 text-right font-bold tabular-nums text-brand-700">{formatINR(totals.pledge_amount)}</td>
-                <td />
+                {columns.map((col, i) => (
+                  <td
+                    key={col.key}
+                    className={cn("py-2.5", i === 0 ? "pl-5 pr-3" : i === columns.length - 1 ? "pr-4" : "pr-3", col.align === "right" && "text-right")}
+                  >
+                    {col.footer ?? null}
+                  </td>
+                ))}
               </tr>
             </tfoot>
           )}

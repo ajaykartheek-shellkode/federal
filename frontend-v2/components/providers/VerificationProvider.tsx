@@ -272,7 +272,7 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
             `Here is the pledged inventory from CBS — <strong>${stats.items} items</strong> (${stats.pieces} pieces), ` +
               `<strong>${stats.total_weight} g</strong> declared.` +
               (damaged.length ? ` CBS declares damage on <strong>${damaged.join(", ")}</strong>.` : "") +
-              " The table follows each step: sighting, weight &amp; purity, then valuation."
+              " The table gains the columns of each step as it completes — sighting, CaratMeter reading, damage, then the pledge amount."
           );
           return;
         }

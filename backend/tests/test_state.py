@@ -184,6 +184,8 @@ def test_documents_gate_and_report(st):
     S.advance(st, False)
     S.record_damage(st, {"ornament_id": "ring-1", "item": "Gold Ring", "status": "pass", "notes": ""})
     S.advance(st, False)
+    assert st["workflow_state"] == "valuation"  # pledge valuation is reviewed before documents
+    S.advance(st, False)
     assert not S.gate(st, False)["allowed"]  # documents are always required
     S.record_documents(st, [{"doc_no": 1, "declared_type": "Aadhaar Card", "asset_id": "d1", "filename": "a.jpg", "content_type": "image/jpeg"}],
                        {"overall_status": "pass", "documents": [{"doc_no": 1, "status": "pass", "legible": True, "complete": True,
@@ -441,7 +443,8 @@ def test_v2_sessions_skip_the_weight_step(st):
     st["version"] = 2
     S.record_collateral(st, photo(), collateral_result(["chain-1", "ring-1"]))
     assert S.advance(st, False) == "damage"
-    assert "weight" not in S.steps_of(st)
+    assert S.steps_of(st) == ["collateral", "damage", "document", "report"]
+    assert S.next_state(st, "damage") == "document"
     texts = " | ".join(r["text"] for r in S.review_reasons(st))
     assert "CaratMeter" not in texts and "scale" not in texts.lower()
 
@@ -465,7 +468,7 @@ def test_valuation_is_captured_when_the_session_starts():
     v = S.view(st, Settings())  # live settings (LTV 75) must not change this session's valuation
     assert {m["key"]: m["ltv_pct"] for m in v["valuation"]["materials"]}["gold"] == 50
     assert v["valuation"]["items"][0]["ltv_pct"] == 50
-    assert v["steps"] == ["collateral", "weight", "damage", "document", "report"]
+    assert v["steps"] == ["collateral", "weight", "damage", "valuation", "document", "report"]
     assert v["options"]["grades"]["silver"] == ["999", "925"]
     assert v["caratmeter"]["device_id"] == "CM-FED-MUM-001"
 

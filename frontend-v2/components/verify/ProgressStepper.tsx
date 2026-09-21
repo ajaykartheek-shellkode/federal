@@ -44,7 +44,8 @@ export default function ProgressStepper({ session }: { session: SessionView }) {
                 {done ? <Icon name="check" size={16} strokeWidth={3} /> : i + 1}
               </motion.span>
               <span className={cn("whitespace-nowrap text-xs", active ? "font-bold text-ink" : done ? "font-semibold text-ink-2" : "text-ink-muted")}>
-                {step.label}
+                {/* Six steps don't fit at full width — fall back to the short names. */}
+                {steps.length > 5 ? step.short : step.label}
               </span>
             </li>
           );

@@ -77,6 +77,7 @@ export const WORKFLOW_STEPS: { key: WorkflowState; label: string; short: string 
   { key: "collateral", label: "Collateral photos", short: "Collateral" },
   { key: "weight", label: "Weight & purity", short: "Weight" },
   { key: "damage", label: "Damage assessment", short: "Damage" },
+  { key: "valuation", label: "Pledge valuation", short: "Pledge" },
   { key: "document", label: "Document verification", short: "Documents" },
   { key: "report", label: "Report", short: "Report" },
 ];

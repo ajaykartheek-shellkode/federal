@@ -60,7 +60,7 @@ def test_full_happy_path_with_reports(client, fake_bedrock):
     fake_bedrock.scale_weight_g = 90.02
     s = start(client)
     sid = s["session_id"]
-    assert s["steps"] == ["collateral", "weight", "damage", "document", "report"]
+    assert s["steps"] == ["collateral", "weight", "damage", "valuation", "document", "report"]
     assert s["stats"]["pledge_is_estimate"] is True and s["stats"]["pledge_amount"] > 0
 
     # Actions out of order are refused with the current view.
@@ -102,8 +102,12 @@ def test_full_happy_path_with_reports(client, fake_bedrock):
     assert s["workflow_state"] == "damage"
 
     res, events, s = step(client, sid, "continue")
-    assert s["workflow_state"] == "document"
+    assert s["workflow_state"] == "valuation"  # review the pledge amount after damage
+    assert s["valuation"]["totals"]["pledge_amount"] > 0
     assert any(e == "agent-msg" for e, _ in events)
+
+    res, events, s = step(client, sid, "continue")
+    assert s["workflow_state"] == "document"
 
     res, events, s = step(client, sid, "document", files=[("documents", photo("aadhaar.png"))],
                           document_types=json.dumps(["Aadhaar Card"]))
@@ -189,7 +193,8 @@ def test_damage_and_document_validation(client, fake_bedrock):
     res, _, _ = step(client, sid, "damage", files=[("damage_images", photo())], damage_hints=json.dumps(other))
     assert res.status_code == 400 and "Describe" in res.json()["error"]
 
-    step(client, sid, "continue")
+    step(client, sid, "continue")  # damage -> valuation
+    step(client, sid, "continue")  # valuation -> document
     res, _, _ = step(client, sid, "document", files=[("documents", ("a.pdf", b"hello", "application/pdf"))],
                      document_types=json.dumps(["Aadhaar Card"]))
     assert res.status_code == 400 and "not a valid PDF" in res.json()["error"]
@@ -204,7 +209,8 @@ def test_document_mismatch_becomes_alert_and_can_be_overridden(client, fake_bedr
     sid = start(client)["session_id"]
     step(client, sid, "collateral", files=[("collateral_images", photo())])
     step(client, sid, "measure")
-    step(client, sid, "continue")
+    step(client, sid, "continue")  # damage -> valuation
+    step(client, sid, "continue")  # valuation -> document
     _, _, s = step(client, sid, "document", files=[("documents", photo())], document_types=json.dumps(["Aadhaar Card"]))
     doc = s["documents"]["items"][0]
     assert doc["status"] == "alert"
@@ -226,7 +232,9 @@ def test_ai_off_scenario_never_calls_bedrock(client, fake_bedrock):
     res = client.post("/api/chat/scale", json={"session_id": sid, "weight_g": 56.03})
     assert res.status_code == 200, res.text
     assert res.json()["session"]["weight"]["scale_status"] == "match" and res.json()["entry"]["target"] == "scale"
-    step(client, sid, "continue")
+    step(client, sid, "continue")  # damage -> valuation
+    _, _, s = step(client, sid, "continue")  # valuation -> document
+    assert s["workflow_state"] == "document"
     _, _, s = step(client, sid, "document", files=[("documents", photo())], document_types=json.dumps(["Aadhaar Card"]))
     assert s["documents"]["items"][0]["status"] == "not_checked"
     _, _, s = step(client, sid, "report")
@@ -282,7 +290,8 @@ def test_report_pdf_download(client, fake_bedrock):
     step(client, sid, "measure")
     for ref in ("bangle-1", "ring-3"):
         client.post("/api/chat/override", json={"session_id": sid, "target": "damage", "ref": ref, "justification": "No damage on inspection"})
-    step(client, sid, "continue")
+    step(client, sid, "continue")  # damage -> valuation
+    step(client, sid, "continue")  # valuation -> document
     step(client, sid, "document", files=[("documents", photo())], document_types=json.dumps(["Aadhaar Card"]))
     _, _, s = step(client, sid, "report")
 
@@ -372,6 +381,7 @@ def test_caratmeter_discrepancies_hold_the_weight_step(client, fake_bedrock):
         assert res.status_code == 200, res.text
     _, _, s = step(client, sid, "continue")
     assert s["workflow_state"] == "damage"
+    assert "continue" in s["allowed_actions"]
     items = {i["ornament_id"]: i for i in s["valuation"]["items"]}
     assert items["bangle-2"]["grade"] == "20K" and items["pendant-1"]["weight_g"] < 7.5
 

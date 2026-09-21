@@ -31,8 +31,8 @@ export default function SessionHeader({ session }: { session: SessionView }) {
   const sighted = stats.verified + stats.overridden;
   const weighs = session.steps?.includes("weight");
   const measured = weighs && session.weight.measured_complete;
-  // The pledge amount is part of the pledged details, so it appears with the inventory.
-  const showPledge = state.showItems || session.collateral.images.length > 0;
+  // The pledge amount belongs to its own step, so the KPI appears once that step is reached.
+  const showPledge = !weighs || ["valuation", "document", "report", "done"].includes(session.workflow_state);
 
   return (
     <motion.section variants={fadeUp} initial="hidden" animate="show" className="fb-wave relative overflow-hidden rounded-3xl bg-brand-hero p-6 text-white shadow-raised">

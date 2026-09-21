@@ -67,6 +67,10 @@ export function parseIntent(raw: string, session: SessionView | null): Intent {
       if (YES_DAMAGE.test(t)) return { kind: "open", dialog: "damage" };
       if (NO_DAMAGE.test(t) || CONTINUE.test(t)) return { kind: "step", action: "continue" };
       break;
+    case "valuation":
+      if (YES_DAMAGE.test(t)) return { kind: "open", dialog: "damage" };
+      if (CONTINUE.test(t) && can("continue")) return { kind: "step", action: "continue" };
+      break;
     case "document":
       if (UPLOAD_DOCS.test(t)) return { kind: "open", dialog: "document" };
       if (CONTINUE.test(t) && can("continue")) return { kind: "step", action: "continue" };

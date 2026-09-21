@@ -309,11 +309,13 @@ async def _damage(ctx: StepContext) -> None:
     summary = f"{len(uploads)} item{'s' if len(uploads) != 1 else ''} analysed" + (f" · {review} to review" if review else "")
     await ex.finish(S.worst(statuses) or "not_checked", summary if ctx.ai else f"{len(uploads)} recorded")
     await ctx.push_state()
+    following = S.next_state(state, "damage")
     await ctx.say("damage", {
         "ai_enabled": ctx.ai,
         "recorded": [S.find_item(state, u.ornament_id)["name"] for u in uploads],
         "needs_review": review,
         "cbs_pending": [r["name"] for r in S.undocumented_cbs_damage(state)],
+        "next_label": "pledge valuation" if following == "valuation" else "documents",
     })
 
 

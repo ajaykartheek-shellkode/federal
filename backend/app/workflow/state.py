@@ -39,15 +39,19 @@ from app.valuation import (
     value_inventory,
 )
 
-# v3 adds the Weight & purity (CaratMeter) step. v2 sessions keep their original four steps.
-VERSION = 3
+# v3 added the Weight & purity (CaratMeter) step; v4 the Pledge valuation review after damage.
+# Older sessions keep the steps they started with.
+VERSION = 4
 
-WORKFLOW = ("collateral", "weight", "damage", "document", "report", "done")
-NEXT_STATE = {"collateral": "weight", "weight": "damage", "damage": "document", "document": "report"}
+WORKFLOW = ("collateral", "weight", "damage", "valuation", "document", "report", "done")
+NEXT_STATE = {
+    "collateral": "weight", "weight": "damage", "damage": "valuation", "valuation": "document", "document": "report",
+}
 ACTIONS: Dict[str, tuple] = {
     "collateral": ("collateral", "continue"),
     "weight": ("measure", "continue"),
     "damage": ("damage", "continue"),
+    "valuation": ("damage", "continue"),
     "document": ("document", "continue"),
     "report": ("document", "report"),
     "done": (),
@@ -136,15 +140,27 @@ def uses_weight(state: dict) -> bool:
     return int(state.get("version", 2)) >= 3
 
 
+def uses_valuation(state: dict) -> bool:
+    """Sessions created before the Pledge valuation step (v3 and older) skip it."""
+    return int(state.get("version", 2)) >= 4
+
+
 def steps_of(state: dict) -> List[str]:
-    steps = ["collateral", "weight", "damage", "document", "report"]
-    return steps if uses_weight(state) else [s for s in steps if s != "weight"]
+    skip = set()
+    if not uses_weight(state):
+        skip.add("weight")
+    if not uses_valuation(state):
+        skip.add("valuation")
+    return [s for s in ("collateral", "weight", "damage", "valuation", "document", "report") if s not in skip]
 
 
 def next_state(state: dict, current: str) -> Optional[str]:
-    if current == "collateral" and not uses_weight(state):
-        return "damage"
-    return NEXT_STATE.get(current)
+    """The next step this session runs, skipping steps it was not created with."""
+    steps = steps_of(state)
+    try:
+        return steps[steps.index(current) + 1]
+    except (ValueError, IndexError):
+        return None
 
 
 # --------------------------------------------------------------------------- creation
@@ -271,6 +287,14 @@ def stage_blockers(state: dict, stage: str, blocker_mode: bool) -> List[str]:
             if flagged:
                 names = ", ".join(r["name"] for r in flagged[:3]) + ("…" if len(flagged) > 3 else "")
                 reasons.append(f"{len(flagged)} item(s) differ from the declared weight or purity ({names}). Re-measure or override each.")
+    elif stage == "valuation":
+        if blocker_mode:
+            unpriced = value_inventory(state["inventory"], valuation_of(state))["totals"]["unpriced"]
+            if unpriced:
+                reasons.append(
+                    "No rate is configured for the purity of " + ", ".join(unpriced) +
+                    ". Add the grade in Settings, or correct the item."
+                )
     elif stage == "damage" and blocker_mode:
         failed = unresolved(state["damages"], ("fail",))
         if failed:

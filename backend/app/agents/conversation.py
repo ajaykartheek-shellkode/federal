@@ -166,7 +166,7 @@ def draft(step: str, f: dict) -> str:
         cbs_part = f" CBS also declares damage on <strong>{_names(cbs)}</strong>." if cbs else ""
         return (
             f"Recorded damage for <strong>{_names(recorded)}</strong>{status_part}.{cbs_part} "
-            "Record more, or continue to documents."
+            f"Record more, or continue to the {f.get('next_label') or 'documents'}."
         )
 
     if step == "document_prompt":
@@ -210,6 +210,10 @@ def draft(step: str, f: dict) -> str:
                 "weight &amp; purity."
             ),
             "damage": "Are there any <strong>damaged ornaments</strong> to record?",
+            "valuation": (
+                "Weight, purity and damage are recorded. Here is the <strong>pledge valuation</strong> — "
+                "review the amount per item, then continue to the documents."
+            ),
             "document": draft("document_prompt", f),
             "report": "All inputs captured. <strong>Generate the report</strong> when you're ready.",
         }.get(f.get("to"), "Let's continue.")
