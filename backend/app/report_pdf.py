@@ -73,22 +73,20 @@ TONE_COLORS = {
 
 RESULT_TONE = {"pass": ("Passed", "ok"), "alert": ("Review", "warn"), "fail": ("Failed", "bad"), "not_checked": ("Not checked", "neutral")}
 ITEM_TONE = {
-    "verified": ("Verified", "ok"),
-    "overridden": ("Overridden", "brand"),
-    "manual": ("Confirmed", "neutral"),
-    "pending": ("Not sighted", "warn"),
+    "detected": ("From photo", "ok"),
+    "manual": ("Added", "brand"),
 }
 MEASURE_TONE = {
-    "match": ("Match", "ok"),
+    "match": ("Assayed", "ok"),
     "weight_mismatch": ("Weight differs", "warn"),
-    "purity_low": ("Lower purity", "warn"),
-    "mismatch": ("Both differ", "warn"),
+    "ungraded": ("Below grades", "warn"),
+    "mismatch": ("Weight & purity", "warn"),
     "missing": ("No reading", "bad"),
     "pending": ("Not measured", "neutral"),
 }
 DAMAGE_RULE = {
-    "tenths": "CBS damage 10 → 1% deduction",
-    "percent": "CBS damage 10 → 10% deduction",
+    "tenths": "damage 10 → 1% deduction",
+    "percent": "damage 10 → 10% deduction",
     "none": "no damage deduction",
 }
 
@@ -140,6 +138,8 @@ def _delta(value: float) -> str:
 
 def purity_label(row: dict) -> str:
     carat = str(row.get("carat") or "")
+    if not carat:
+        return "-"
     return f"{carat}K" if (row.get("material", "gold") == "gold" and carat.replace(".", "", 1).isdigit()) else carat
 
 
@@ -265,12 +265,11 @@ def _verdict(view: dict) -> Table:
     warnings = sum(1 for r in report["reasons"] if r["level"] == "warn")
     accent, background = (OK, OK_SOFT) if proceed else (GOLD, CREAM)
 
-    measured = bool(weight.get("measured_complete"))
     kpis = [
-        (str(stats["items"]), "Items"),
-        (grams(weight.get("measured_g") if measured else stats["total_weight"]), "Measured weight" if measured else "Declared weight"),
-        (f"{stats['verified'] + stats['overridden']}/{stats['items']}", "Sighted"),
-        (inr(totals.get("pledge_amount", stats.get("pledge_amount", 0))), "Pledge (est.)" if totals.get("is_estimate") else "Pledge amount"),
+        (str(stats["items"]), "Ornaments"),
+        (grams(stats.get("total_weight")), "Weight entered"),
+        (f"{stats.get('measured', 0)}/{stats['items']}", "Assayed"),
+        (inr(totals.get("pledge_amount", stats.get("pledge_amount", 0))), "Pledge (provisional)" if totals.get("is_estimate") else "Pledge amount"),
     ]
     kpi_table = Table(
         [[Paragraph(v, S_KPI) for v, _ in kpis], [Paragraph(l, S_KPI_LABEL) for _, l in kpis]],
@@ -376,7 +375,7 @@ def _collateral(view: dict) -> List:
         ]))
         flow += [strip, Spacer(1, 3 * mm)]
 
-    header = [Paragraph(h, S_TH) for h in ("", "Ornament", "Purity", "Weight", "Qty", "Sighting", "Damage")]
+    header = [Paragraph(h, S_TH) for h in ("", "Ornament", "Purity", "Weight entered", "Qty", "Listed", "Damage")]
     rows = [header]
     for it in view["inventory"]:
         damage = next((d for d in view["damages"] if d["ornament_id"] == it["id"]), None)
@@ -394,7 +393,7 @@ def _collateral(view: dict) -> List:
             Paragraph(purity_label(it), S_TD),
             Paragraph(grams(it["weight_gm"]), S_TD),
             Paragraph(str(it["quantity"]), S_TD),
-            _pill(*ITEM_TONE.get(it["status"], ITEM_TONE["pending"]), width=24 * mm),
+            _pill(*ITEM_TONE.get(it.get("origin", "detected"), ITEM_TONE["detected"]), width=24 * mm),
             chip,
         ])
     widths = [10 * mm, CONTENT_W - 118 * mm, 20 * mm, 22 * mm, 12 * mm, 28 * mm, 26 * mm]
@@ -425,14 +424,14 @@ def _weight_section(view: dict) -> List:
     device = weight.get("device") or {}
     source = weight.get("scale_source")
     scale_caption = (
-        f"Read from photo {(weight.get('scale_photo') or 0) + 1}" if source == "photo"
+        "Read from the machine photo" if source == "photo"
         else "Entered by the assessor" if source == "assessor" else "Not captured"
     )
     tiles = Table([[
-        tile("Weighing scale", grams(weight["scale_g"]) if weight.get("scale_g") is not None else "-", scale_caption),
+        tile("Entered per item", grams(weight["entered_g"]), f"{report['stats']['items']} ornaments"),
+        tile("Weighing machine", grams(weight["scale_g"]) if weight.get("scale_g") is not None else "-", scale_caption),
         tile("CaratMeter total", grams(weight["measured_g"]) if weight.get("measured_g") is not None else "-",
              f"{device.get('model') or 'CaratMeter'} · {device.get('device_id') or '-'}"),
-        tile("CBS declared", grams(weight["declared_g"]), f"{report['stats']['items']} items"),
     ]], colWidths=[CONTENT_W / 3] * 3, hAlign="LEFT")
     tiles.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -441,17 +440,16 @@ def _weight_section(view: dict) -> List:
     ]))
 
     status = weight.get("scale_status")
-    basis = "CaratMeter" if weight.get("measured_complete") else "CBS-declared"
     if status == "match":
-        recon = f"within tolerance of the {basis} total (±{grams(weight['tolerance_g'])})"
+        recon = f"the machine agrees with the entered weights (±{grams(weight['tolerance_g'])})"
     elif status == "mismatch":
-        recon = f"differs from the {basis} total by {grams(abs(weight.get('scale_diff_g') or 0))} (tolerance ±{grams(weight['tolerance_g'])})"
+        recon = f"the machine differs from the entered weights by {grams(abs(weight.get('scale_diff_g') or 0))} (tolerance ±{grams(weight['tolerance_g'])})"
     else:
-        recon = "no weighing-scale reading captured"
+        recon = "no weighing-machine total captured"
     if weight.get("scale_overridden"):
         recon += " — accepted by the assessor"
 
-    header = [Paragraph(h, S_TH) for h in ("Ornament", "CBS declared", "CaratMeter reading", "Diff wt", "Reading", "Rate/g", "LTV", "Pledge")]
+    header = [Paragraph(h, S_TH) for h in ("Ornament", "Weight entered", "CaratMeter assay", "Diff wt", "Reading", "Rate/g", "LTV", "Pledge")]
     rows = [header]
     for it in view["inventory"]:
         valued = next((v for v in valuation["items"] if v["ornament_id"] == it["id"]), None)
@@ -461,7 +459,7 @@ def _weight_section(view: dict) -> List:
         chip = _pill(label, tone, width=23 * mm)
         rows.append([
             Paragraph(it["name"], S_TD_STRONG),
-            Paragraph(f"{purity_label(it)} · {grams(it['weight_gm'])}", S_TD),
+            Paragraph(grams(it["weight_gm"]), S_TD),
             Paragraph(f"{m['grade'] or 'Ungraded'} ({m['fineness_pct']:.2f}%) · {grams(m['weight_g'])}" if m else "-", S_TD),
             Paragraph(_delta(m["weight_g"] - it["weight_gm"]) if m else "-", S_TD),
             chip,
@@ -485,10 +483,10 @@ def _weight_section(view: dict) -> List:
         ("LINEABOVE", (0, -1), (-1, -1), 0.6, LINE),
     ]))
     note = Paragraph(
-        f"Valued on {'CaratMeter-measured' if not totals['is_estimate'] else 'CBS-declared'} weight at the rate for the "
-        f"{'assessed' if not totals['is_estimate'] else 'declared'} purity × the material LTV, less the damage deduction "
-        f"({DAMAGE_RULE.get(valuation.get('damage_deduction_mode'), 'per settings')}). Rates as configured when the "
-        "verification started. Indicative — not a sanction.",
+        "Valued on the weight entered for each ornament at the rate for the purity the CaratMeter assayed × the "
+        f"material LTV, less the damage deduction ({DAMAGE_RULE.get(valuation.get('damage_deduction_mode'), 'per settings')}). "
+        + ("Some ornaments are not assayed yet, so the total is provisional. " if totals["is_estimate"] else "")
+        + "Rates as configured when the verification started. Indicative — not a sanction.",
         _style("note", 7, 9.5, INK_MUTED),
     )
     footer = Table([[note, money]], colWidths=[CONTENT_W - 72 * mm, 72 * mm], hAlign="LEFT")
@@ -501,7 +499,7 @@ def _weight_section(view: dict) -> List:
     return [
         tiles,
         Spacer(1, 2.5 * mm),
-        Paragraph(f"<b>Scale reconciliation:</b> {recon}", S_BODY),
+        Paragraph(f"<b>Reconciliation:</b> {recon}", S_BODY),
         Spacer(1, 2 * mm),
         _table(rows, widths),
         footer,

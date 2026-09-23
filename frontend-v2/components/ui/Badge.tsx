@@ -75,15 +75,8 @@ export function ResultBadge({ status, overridden, className }: { status: ResultS
   );
 }
 
-export function ItemBadge({ status, awaitingPhoto }: { status: ItemStatus; awaitingPhoto?: boolean }) {
-  if (status === "pending" && awaitingPhoto) {
-    return (
-      <Badge tone="neutral" dot title="No collateral photo uploaded yet">
-        Awaiting photo
-      </Badge>
-    );
-  }
-  const meta = ITEM_META[status];
+export function ItemBadge({ status }: { status: ItemStatus }) {
+  const meta = ITEM_META[status] ?? ITEM_META.detected;
   return (
     <Badge tone={meta.tone} dot title={meta.hint}>
       {meta.label}

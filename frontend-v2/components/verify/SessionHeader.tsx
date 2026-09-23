@@ -28,9 +28,7 @@ export default function SessionHeader({ session }: { session: SessionView }) {
     .slice(0, 2)
     .map((p) => p[0]?.toUpperCase())
     .join("");
-  const sighted = stats.verified + stats.overridden;
   const weighs = session.steps?.includes("weight");
-  const measured = weighs && session.weight.measured_complete;
   // The pledge amount belongs to its own step, so the KPI appears once that step is reached.
   const showPledge = !weighs || ["valuation", "document", "report", "done"].includes(session.workflow_state);
 
@@ -55,20 +53,24 @@ export default function SessionHeader({ session }: { session: SessionView }) {
         </div>
       </div>
       <div className={cn("mt-5 grid grid-cols-2 gap-3", showPledge ? "md:grid-cols-5" : "md:grid-cols-4")}>
-        <Kpi icon="layers" label="Items" hint={`${stats.pieces} pieces`}>
+        <Kpi icon="gem" label="Ornaments" hint={`${stats.pieces} pieces · ${stats.manual} added by hand`}>
           <AnimatedNumber value={stats.items} />
           <span className="ml-1 text-xs font-semibold text-white/55">{stats.pieces !== stats.items ? `${stats.pieces} pcs` : ""}</span>
         </Kpi>
         <Kpi
           icon="weighScale"
-          label={measured ? "Measured weight" : "Declared weight"}
-          hint={measured ? "Total of the CaratMeter readings" : "Total CBS-declared weight (not yet measured)"}
+          label="Weight entered"
+          hint={
+            session.weight.scale_g !== null
+              ? `Weighing machine reads ${formatNumber(session.weight.scale_g)} g`
+              : "Total of the weights entered per ornament"
+          }
         >
-          <AnimatedNumber value={measured ? session.weight.measured_g ?? 0 : stats.total_weight} format={(n) => formatNumber(n)} />
+          <AnimatedNumber value={stats.total_weight} format={(n) => formatNumber(n)} />
           <span className="ml-1 text-sm font-semibold text-white/55">g</span>
         </Kpi>
-        <Kpi icon="shieldCheck" label="Sighted">
-          <AnimatedNumber value={sighted} />
+        <Kpi icon="cpu" label="Assayed" hint="Ornaments the CaratMeter has returned a purity for">
+          <AnimatedNumber value={stats.measured} />
           <span className="text-sm font-semibold text-white/55">/{stats.items}</span>
         </Kpi>
         <Kpi icon="alert" label="Damaged">
@@ -77,12 +79,12 @@ export default function SessionHeader({ session }: { session: SessionView }) {
         {showPledge && (
         <Kpi
           icon="rupee"
-          label={stats.pledge_is_estimate ? "Pledge amount · est." : "Pledge amount"}
+          label={stats.pledge_is_estimate ? "Pledge · provisional" : "Pledge amount"}
           highlight
           hint={
             stats.pledge_is_estimate
-              ? "Estimated on CBS-declared weight and purity until the CaratMeter readings are fetched. Not a sanction amount."
-              : "Measured weight × rate for the assessed purity × LTV, less the damage deduction. Not a sanction amount."
+              ? "Provisional until every ornament is assayed. Not a sanction amount."
+              : "Weight entered × rate for the assayed purity × LTV, less the damage deduction. Not a sanction amount."
           }
         >
           <AnimatedNumber value={stats.pledge_amount} format={(n) => formatINR(n)} />

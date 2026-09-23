@@ -29,6 +29,7 @@ from app.schemas import (  # noqa: E402
     DocumentItemResult,
     DocumentMatches,
     DocumentResult,
+    ScaleResult,
 )
 
 
@@ -43,19 +44,31 @@ def png_bytes(size=(64, 48), color=(212, 175, 55)) -> bytes:
 class FakeBedrock:
     """Returns canned, schema-valid results. Tests tweak the attributes to steer outcomes."""
 
+    # The collateral agent's detections become the inventory, so these labels drive most tests.
+    DEFAULT_LABELS = ("Gold Chain", "Gold Bangle", "Gold Ring")
+
     def __init__(self):
         self.collateral_status = "pass"
-        self.collateral_labels = None  # list of labels; default derived from the inventory hint
+        self.collateral_labels = list(self.DEFAULT_LABELS)
         self.damage_status = "pass"
         self.document_status = "pass"
         self.document_matches = DocumentMatches(name=True, id=True, address_pct=95)
-        self.scale_weight_g = None  # weighing-scale display shown in the first photo (None = not visible)
+        self.scale_weight_g = None  # what the weighing-machine photo shows (None = display unreadable)
         self.calls = []
 
     async def __call__(self, system_prompt, task_text, blocks, model, max_tokens=2000):
         self.calls.append(model.__name__)
         if model is CollateralResult:
             return self._collateral(system_prompt, blocks)
+        if model is ScaleResult:
+            visible = self.scale_weight_g is not None
+            return ScaleResult(
+                status="pass" if visible else "fail",
+                reading_visible=visible,
+                weight_g=self.scale_weight_g,
+                reading_text=f"{self.scale_weight_g} g" if visible else "",
+                issues=[] if visible else ["Display not readable"],
+            )
         if model is DamageResult:
             return DamageResult(
                 ornament_id="x", status=self.damage_status,
@@ -82,24 +95,19 @@ class FakeBedrock:
         # Conversation replies (guidance / answer)
         return model.model_validate({"text": "Polished message."})
 
-    def _collateral(self, system_prompt, blocks):
+    def _collateral(self, _system_prompt, blocks):
+        """Every ornament the assessor photographed — the first image carries the detections."""
         image_count = sum(1 for b in blocks if "image" in b)
-        hint = system_prompt.split("CBS PLEDGED INVENTORY (id → declared item): ", 1)[1].split(". For each", 1)[0]
-        pairs = [p.split("=", 1) for p in hint.split(", ") if "=" in p]
         images = []
         for idx in range(image_count):
-            items = []
-            if idx == 0:
-                labels = self.collateral_labels if self.collateral_labels is not None else [name for _id, name in pairs]
-                for n, label in enumerate(labels):
-                    items.append(DetectedItem(label=label.lower(), box=BoundingBox(x=0.05 * n, y=0.1, w=0.2, h=0.3)))
+            items = [
+                DetectedItem(label=label, box=BoundingBox(x=0.05 * n, y=0.1, w=0.2, h=0.3))
+                for n, label in enumerate(self.collateral_labels)
+            ] if idx == 0 else []
             images.append(CollateralImageResult(
                 index=idx, status=self.collateral_status, clarity_ok=True, all_visible=True, not_cropped=True,
                 no_obstruction=True, no_foreign_objects=True, clean_background=True,
                 ornament_count_estimate=len(items), items=items,
-                scale_reading_visible=idx == 0 and self.scale_weight_g is not None,
-                scale_weight_g=self.scale_weight_g if idx == 0 else None,
-                scale_reading_text=f"{self.scale_weight_g} g" if idx == 0 and self.scale_weight_g is not None else "",
                 issues=[] if self.collateral_status == "pass" else ["Image is blurry"],
             ))
         return CollateralResult(overall_status=self.collateral_status, images=images)
@@ -108,9 +116,9 @@ class FakeBedrock:
 @pytest.fixture
 def fake_bedrock(monkeypatch):
     fake = FakeBedrock()
-    from app.agents import collateral, conversation, damage, document
+    from app.agents import collateral, conversation, damage, document, scale
 
-    for module in (collateral, conversation, damage, document):
+    for module in (collateral, conversation, damage, document, scale):
         monkeypatch.setattr(module, "run_converse", fake)
     return fake
 

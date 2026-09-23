@@ -21,10 +21,9 @@ router = APIRouter(prefix="/api/integrations/caratmeter/v1", tags=["integrations
 
 
 class Sample(BaseModel):
-    tag: str = Field(min_length=1, max_length=64)
+    tag: str = Field(min_length=1, max_length=64)  # the ornament id created for this application
     material: str = Field(default="gold", max_length=24)
-    declared_purity: str = Field(default="", max_length=12)
-    declared_weight_g: float = Field(default=0, ge=0, le=50_000)
+    entered_weight_g: float = Field(default=0, ge=0, le=50_000)
 
 
 class MeasureBody(BaseModel):

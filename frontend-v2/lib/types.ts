@@ -2,10 +2,11 @@
 
 export type CheckStatus = "pass" | "alert" | "fail";
 export type ResultStatus = CheckStatus | "not_checked";
-export type ItemStatus = "pending" | "verified" | "overridden" | "manual";
+/** How a row got onto the pledge list: seen in the collateral photo, or added by the assessor. */
+export type ItemStatus = "detected" | "manual";
 export type WorkflowState = "collateral" | "weight" | "damage" | "valuation" | "document" | "report" | "done";
-export type StepAction = "collateral" | "measure" | "damage" | "document" | "continue" | "report";
-export type MeasurementStatus = "pending" | "match" | "weight_mismatch" | "purity_low" | "mismatch" | "missing";
+export type StepAction = "collateral" | "scale_photo" | "measure" | "damage" | "document" | "continue" | "report";
+export type MeasurementStatus = "pending" | "match" | "weight_mismatch" | "ungraded" | "mismatch" | "missing";
 export type Severity = "minor" | "moderate" | "severe";
 
 export interface Loan {
@@ -31,18 +32,18 @@ export interface Measurement {
 }
 
 export interface InventoryItem {
+  /** Generated here (item-1, item-2 …) and used as the CaratMeter request tag. */
   id: string;
   name: string;
   /** Valuation material key, e.g. "gold" | "silver". */
   material: string;
-  /** Declared purity token from CBS: "22" (22K gold), "925" (sterling silver). */
+  /** Purity token: empty until the CaratMeter assays it ("22" = 22K gold, "925" = sterling silver). */
   carat: string;
+  /** Entered by the assessor at the counter. 0 until weighed. */
   weight_gm: number;
   quantity: number;
   damage_percent: number;
-  cbs_damage: boolean;
-  cbs_damage_details: string;
-  cbs_damage_waived?: boolean;
+  origin: ItemStatus;
   status: ItemStatus;
   thumb_asset_id: string | null;
   source_image: number | null;
@@ -70,9 +71,8 @@ export interface CollateralImage {
   ornament_count_estimate: number;
   foreign_object_percent: number;
   issues: string[];
+  /** Ids of the ornaments this photo put on the list. */
   matched: string[];
-  /** Weighing-scale display read from this photo. */
-  scale?: { visible: boolean; weight_g: number | null; text: string };
 }
 
 export interface CollateralState {
@@ -80,7 +80,7 @@ export interface CollateralState {
   overall_status: CheckStatus | null;
   issues: string[];
   corrective_actions: string[];
-  unmatched_detections: number;
+  detections: number;
 }
 
 export interface DamageEntry {
@@ -88,6 +88,8 @@ export interface DamageEntry {
   item: string;
   type: string;
   severity: Severity;
+  /** Percentage the assessor recorded; the Settings rule turns it into a deduction. */
+  damage_percent: number;
   assessor_details: string;
   asset_id: string | null;
   thumb_asset_id: string | null;
@@ -128,7 +130,7 @@ export interface DocumentsState {
   corrective_actions: string[];
 }
 
-export type AuditTarget = "item" | "damage" | "document" | "edit" | "measurement" | "scale";
+export type AuditTarget = "item" | "damage" | "document" | "edit" | "measurement" | "scale" | "weight";
 
 export interface AuditEntry {
   id: string;
@@ -149,10 +151,11 @@ export interface ReviewReason {
 export interface Stats {
   items: number;
   pieces: number;
-  verified: number;
-  overridden: number;
-  pending: number;
+  detected: number;
+  manual: number;
+  weighed: number;
   damaged: number;
+  /** Total of the weights entered by the assessor. */
   total_weight: number;
   measured_weight: number | null;
   measured: number;
@@ -162,10 +165,14 @@ export interface Stats {
 }
 
 export interface ScaleReading {
-  weight_g: number;
+  /** null when the machine photo was uploaded but its display could not be read. */
+  weight_g: number | null;
   text: string;
-  source: "photo" | "assessor";
-  photo_index: number | null;
+  source: "photo" | "assessor" | null;
+  asset_id: string | null;
+  filename: string;
+  status: ResultStatus;
+  issues: string[];
   recorded_at: string;
 }
 
@@ -179,14 +186,18 @@ export interface CaratMeterDevice {
 }
 
 export interface WeightSummary {
-  declared_g: number;
+  /** Total of the weights entered per item. */
+  entered_g: number;
   measured_g: number | null;
   measured_complete: boolean;
-  reference: "measured" | "declared";
+  weighed: number;
+  unweighed: string[];
   scale_g: number | null;
   scale_text: string;
   scale_source: "photo" | "assessor" | null;
-  scale_photo: number | null;
+  scale_asset_id: string | null;
+  scale_photo_status: ResultStatus | null;
+  scale_issues: string[];
   scale_diff_g: number | null;
   scale_status: "pending" | "missing" | "match" | "mismatch";
   scale_overridden: boolean;
@@ -207,7 +218,8 @@ export interface ValuedItem {
   material: string;
   grade: string | null;
   weight_g: number;
-  weight_basis: "measured" | "declared";
+  weight_basis: "entered";
+  measured: boolean;
   rate_per_gram: number;
   gross_value: number;
   ltv_pct: number;
@@ -255,9 +267,9 @@ export interface SessionView {
   steps: Exclude<WorkflowState, "done">[];
   ai_enabled: boolean;
   loan: Loan;
-  rate_table: Record<string, number>;
   inventory: InventoryItem[];
   collateral: CollateralState;
+  /** The weighing-machine photo and the total it showed. */
   scale: ScaleReading | null;
   measurements: { device: CaratMeterDevice; measured_at: string; count: number } | null;
   weight: WeightSummary;
@@ -282,6 +294,7 @@ export interface SessionView {
     severities: Severity[];
     document_types: string[];
     carats: string[];
+    materials: { key: string; name: string }[];
     grades: Record<string, string[]>;
     damage_deduction: DamageDeduction;
   };

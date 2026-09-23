@@ -38,30 +38,14 @@ export function OverrideDialog({ open, target, refId, onClose }: { open: boolean
 
   let title = "Override finding";
   let context: React.ReactNode = null;
-  if (target === "item") {
-    const item = session.inventory.find((i) => i.id === refId);
-    title = "Confirm item not sighted by AI";
-    context = item && (
-      <Context thumb={item.thumb_asset_id} name={item.name} meta={`${purityLabel(item)} · ${formatWeight(item.weight_gm)}`}>
-        <span className="text-xs text-warn">Not matched in any collateral photo</span>
-      </Context>
-    );
-  } else if (target === "damage") {
+  if (target === "damage") {
     const d = session.damages.find((x) => x.ornament_id === refId);
-    const item = session.inventory.find((i) => i.id === refId);
     if (d) {
       title = "Accept damage finding";
       context = (
-        <Context thumb={d.thumb_asset_id} name={d.item} meta={`${d.type} · ${d.severity}`}>
+        <Context thumb={d.thumb_asset_id} name={d.item} meta={`${d.type} · ${d.severity} · ${d.damage_percent}%`}>
           <ResultBadge status={d.status} />
           {d.notes && <span className="text-xs text-ink-muted">{d.notes}</span>}
-        </Context>
-      );
-    } else if (item) {
-      title = "Waive CBS-declared damage";
-      context = (
-        <Context thumb={item.thumb_asset_id} name={item.name} meta={`${purityLabel(item)} · ${formatWeight(item.weight_gm)}`}>
-          <span className="text-xs text-warn">CBS: {item.cbs_damage_details || "damage declared"} — no damage photo recorded</span>
         </Context>
       );
     }
@@ -70,22 +54,29 @@ export function OverrideDialog({ open, target, refId, onClose }: { open: boolean
     const m = item?.measurement;
     title = "Accept CaratMeter reading";
     context = item && (
-      <Context thumb={item.thumb_asset_id} name={item.name} meta={`CBS ${purityLabel(item)} · ${formatWeight(item.weight_gm)}`}>
+      <Context thumb={item.thumb_asset_id} name={item.name} meta={`Entered ${formatWeight(item.weight_gm)}`}>
         <span className="text-xs font-semibold text-warn">{MEASURE_META[item.measurement_status ?? "pending"].label}</span>
         {m && (
           <span className="text-xs text-ink-muted">
-            Measured {formatWeight(m.weight_g)} · {m.fineness_pct.toFixed(2)}% ({m.grade ?? "ungraded"})
+            Device {formatWeight(m.weight_g)} · {m.fineness_pct.toFixed(2)}% ({m.grade ?? "ungraded"})
           </span>
         )}
       </Context>
     );
   } else if (target === "scale") {
     const w = session.weight;
-    const total = w.measured_complete ? w.measured_g : w.declared_g;
-    title = w.scale_status === "missing" ? "Continue without a scale reading" : "Accept scale difference";
+    title = w.scale_g === null ? "Continue without a machine total" : "Accept the difference";
     context = (
-      <Context thumb={session.collateral.images.find((i) => i.index === w.scale_photo)?.asset_id ?? null} name="Weighing-scale reading" meta={w.scale_g !== null ? `Scale ${formatWeight(w.scale_g)} · ${w.measured_complete ? "CaratMeter" : "CBS"} total ${formatWeight(total ?? 0)}` : "No reading captured"}>
-        {w.scale_status === "mismatch" && <span className="text-xs text-warn">Differs by {formatWeight(Math.abs(w.scale_diff_g ?? 0))} (tolerance ±{formatWeight(w.tolerance_g)})</span>}
+      <Context
+        thumb={w.scale_asset_id}
+        name="Weighing-machine total"
+        meta={w.scale_g !== null ? `Machine ${formatWeight(w.scale_g)} · entered ${formatWeight(w.entered_g)}` : "No total captured"}
+      >
+        {w.scale_status === "mismatch" && (
+          <span className="text-xs text-warn">
+            Differs by {formatWeight(Math.abs(w.scale_diff_g ?? 0))} (tolerance ±{formatWeight(w.tolerance_g)})
+          </span>
+        )}
       </Context>
     );
   } else {
@@ -178,7 +169,7 @@ export function EditItemDialog({ open, refId, onClose }: { open: boolean; refId:
   const { session, editItem, state } = useVerification();
   const item = session?.inventory.find((i) => i.id === refId);
   const [name, setName] = useState("");
-  const [carat, setCarat] = useState("22");
+  const [carat, setCarat] = useState("");
   const grades = (item && session?.options.grades?.[item.material]) ?? session?.options.carats.map((c) => `${c}K`) ?? [];
   const token = (g: string) => g.toUpperCase().replace(/K$/, "");
   const [weight, setWeight] = useState("");
@@ -254,8 +245,11 @@ export function EditItemDialog({ open, refId, onClose }: { open: boolean; refId:
         </div>
         <div className="grid grid-cols-3 gap-3">
           <div>
-            <Label htmlFor="edit-carat">Purity</Label>
+            <Label htmlFor="edit-carat" hint="from the assay">
+              Purity
+            </Label>
             <Select id="edit-carat" value={carat} onChange={(e) => setCarat(e.target.value)}>
+              <option value="">Not assayed</option>
               {grades.map((g) => (
                 <option key={g} value={token(g)}>
                   {g}

@@ -21,20 +21,21 @@ npm run typecheck && npm run lint && npm run build
 
 ## The flow
 
-1. **Account** — enter a loan account number (chat or welcome screen). CBS details, KYC (masked) and the
-   pledged inventory load; CBS-declared damage is flagged.
-2. **Collateral photos** — place the ornaments on the weighing scale and upload or webcam-capture up
-   to 3 photos per upload. The Collateral Validator checks clarity, visibility, cropping, obstruction,
-   foreign objects and background, reads the scale display, matches each detected item to a CBS row
-   and crops a thumbnail. Unsighted items can be re-captured or confirmed with a justified override;
-   an unreadable scale reading can be entered or corrected (audited).
-3. **Weight & purity** — fetch readings from the CaratMeter: net weight and XRF fineness per item,
-   graded against the valuation table and compared with CBS; the scale reading is reconciled with the
-   measured total. Differences can be re-measured or accepted with a justification. The **Pledge
-   valuation** card shows the amount per item and in total (gross value → LTV margin → damage
-   deduction → pledge).
-4. **Damage** — one close-up per damaged item (pre-filled from CBS). The Damage Detector compares the
-   recorded damage with the photo and rates severity; items are analysed in parallel.
+1. **Account** — enter a loan account number (chat or welcome screen). Only the customer and KYC
+   (masked) load from CBS; nothing is pledged yet.
+2. **Collateral photos** — lay the ornaments out on a plain surface and upload or webcam-capture up to
+   3 photos per upload. The Collateral Validator checks the capture and **lists every ornament it can
+   see**, cropping a thumbnail for each; that list *is* the pledged inventory. Rename, add or remove
+   rows as needed — a re-capture replaces the list until weighing starts.
+3. **Weight & purity** — type each ornament's weight straight into the table, upload the
+   **weighing-machine photo** for the total (or type it), then fetch the purity: one CaratMeter
+   request for the loan application returns an assay per ornament, graded against the valuation table
+   and cross-checked against the weight entered. Findings can be re-assayed or accepted with a
+   justification. The **Pledge valuation** card shows the amount per ornament and in total (gross
+   value → LTV margin → damage deduction → pledge).
+4. **Damage** — one close-up per damaged ornament with its **damage percentage**, which reduces that
+   item's pledge amount. The Damage Detector compares the recorded damage with the photo and rates
+   severity; items are analysed in parallel.
 5. **Documents** — ID proof (image or multi-page PDF) with its type. The Document Verifier checks
    legibility/completeness and cross-verifies name, ID number and address against CBS.
 6. **Report** — PROCEED / REVIEW recommendation with reasons, weight & pledge valuation, audit trail

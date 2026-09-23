@@ -1,17 +1,18 @@
-"""Collateral Image Validation agent.
+"""Collateral Image Validation agent — it also *creates* the inventory.
 
-Three phases so the chat timeline can show each one as it really happens:
-  1. ``analyze_collateral`` — one multimodal call over all photos in the upload
-  2. ``match_items``        — map detections to CBS inventory rows (conservative, kind-checked)
-  3. ``crop_matched``       — crop a thumbnail for every newly verified item and store it
-``validate_collateral`` chains all three for the legacy v1 orchestrator.
+Two phases so the chat timeline can show each one as it really happens:
+  1. ``analyze_collateral`` — one multimodal call over all photos in the upload: quality checks
+     plus one detection per ornament, each labelled the way a pledge list would name it
+  2. ``crop_detections``    — crop a thumbnail for every detection and store it
+The workflow then turns those detections into inventory rows (app.workflow.state.record_collateral).
+``validate_collateral`` chains both for the legacy v1 orchestrator.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from app import store
 from app.agents.assets import Asset
@@ -23,16 +24,6 @@ from app.bedrock.crop import crop_normalized
 from app.schemas import CollateralImageResult, CollateralResult
 
 logger = logging.getLogger("glportal.agents.collateral")
-
-# Most specific first: "earring" contains "ring", "necklace" is not a "chain".
-_KINDS = ("earring", "anklet", "bracelet", "bangle", "necklace", "pendant", "chain", "ring", "coin")
-
-
-def ornament_kind(text: str) -> str:
-    """Coarse physical kind from a label or declared name ('' when unknown)."""
-    t = (text or "").lower()
-    return next((k for k in _KINDS if k in t), "")
-
 
 def _field(o, key: str, default=""):
     return o.get(key, default) if isinstance(o, dict) else getattr(o, key, default)
@@ -59,7 +50,6 @@ async def analyze_collateral(
     images: List[Asset],
     max_ornaments: int,
     foreign_pct: int,
-    inventory: Optional[list] = None,
 ) -> CollateralResult:
     """Validate the photos of one upload. Always returns exactly one image result per photo."""
     if not images:
@@ -74,8 +64,7 @@ async def analyze_collateral(
     if not blocks:
         return _fallback(len(images), "unsupported image format")
 
-    inv_hint = ", ".join(f"{_field(o, 'id')}={_field(o, 'name')}" for o in (inventory or [])) or "(none)"
-    system = COLLATERAL_PROMPT.format(max_ornaments=max_ornaments, foreign_pct=foreign_pct, inventory=inv_hint)
+    system = COLLATERAL_PROMPT.format(max_ornaments=max_ornaments, foreign_pct=foreign_pct)
     task = f"There are {len(images)} collateral image(s), indexed from 0. Validate each image."
     try:
         result = await run_converse(system, task, blocks, CollateralResult, max_tokens=3000)
@@ -114,7 +103,6 @@ def _normalize(result: CollateralResult, count: int, unsupported: Dict[int, str]
             img.no_foreign_objects = False
             img.issues = [f"Foreign objects ~{img.foreign_object_percent}% (limit {foreign_pct}%)", *img.issues]
         img.issues = short_list(img.issues)
-        _sanitize_scale(img)
         images.append(img)
 
     result.images = images
@@ -125,72 +113,14 @@ def _normalize(result: CollateralResult, count: int, unsupported: Dict[int, str]
     return result
 
 
-def _sanitize_scale(img: CollateralImageResult) -> None:
-    """A scale reading counts only when it is visible, numeric and plausible."""
-    weight = img.scale_weight_g
-    ok = img.status != "fail" and img.scale_reading_visible and weight is not None and 0 < weight <= 50_000
-    if not ok:
-        img.scale_reading_visible, img.scale_weight_g, img.scale_reading_text = False, None, ""
-    else:
-        img.scale_weight_g = round(weight, 3)
-        img.scale_reading_text = " ".join(img.scale_reading_text.split())[:40]
-
-
-def match_items(result: CollateralResult, inventory: list, already_sighted: Iterable[str] = ()) -> int:
-    """Assign each detection in this upload to at most one CBS row. Returns matches to still-pending rows.
-
-    Identical ornaments (two plain rings) can't be told apart in a photo, so matching is
-    conservative: a detection of a kind first "uses up" rows of that kind that were ALREADY
-    sighted in earlier uploads, and only then verifies a pending row. Photographing the same
-    ring twice therefore never verifies a second ring. An explicit "no match" from the model
-    (empty string) is respected, and detections in unusable ('fail') photos never match.
-    """
-    sighted = set(already_sighted)
-    ids = [_field(o, "id") for o in inventory if _field(o, "id")]
-    order = [i for i in ids if i in sighted] + [i for i in ids if i not in sighted]
-    kind_of = {_field(o, "id"): ornament_kind(_field(o, "name")) for o in inventory}
-    used: set = set()
-    new_matches = 0
-
-    for img in result.images:
-        for item in img.items:
-            candidate = item.matched_ornament_id
-            item.matched_ornament_id = None
-            if img.status == "fail" or candidate == "":
-                continue
-            valid_candidate = candidate if candidate in kind_of and candidate not in used else None
-            kind = ornament_kind(item.label) or (kind_of[candidate] if candidate in kind_of else "")
-            chosen = None
-            if kind:
-                chosen = next((oid for oid in order if oid not in used and kind_of[oid] == kind), None)
-            if chosen is None and valid_candidate:
-                # No row of the detected kind is left: trust the model only if the kinds don't
-                # conflict, or the inventory has no rows of the detected kind at all
-                # (e.g. a necklace the model described as a "chain").
-                candidate_kind = kind_of[valid_candidate]
-                kind_in_inventory = kind in kind_of.values()
-                if not kind or not candidate_kind or candidate_kind == kind or not kind_in_inventory:
-                    chosen = valid_candidate
-            if chosen:
-                item.matched_ornament_id = chosen
-                used.add(chosen)
-                if chosen not in sighted:
-                    new_matches += 1
-    return new_matches
-
-
-def crop_matched(result: CollateralResult, images: List[Asset], skip_ids: Iterable[str] = ()) -> int:
-    """Crop and store a thumbnail for every matched detection (except rows in ``skip_ids``,
-    which already have one). Returns thumbnails created."""
-    skip = set(skip_ids)
+def crop_detections(result: CollateralResult, images: List[Asset]) -> int:
+    """Crop and store a thumbnail for every detected ornament. Returns thumbnails created."""
     created = 0
     for img in result.images:
         asset = images[img.index] if 0 <= img.index < len(images) else None
-        if asset is None:
+        if asset is None or img.status == "fail":
             continue
         for item in img.items:
-            if not item.matched_ornament_id or item.matched_ornament_id in skip:
-                continue
             png = crop_normalized(asset.data, item.box.model_dump())
             if png:
                 item.thumb_asset_id = store.save_asset(png, "image/png")
@@ -202,13 +132,12 @@ async def validate_collateral(
     images: List[Asset],
     max_ornaments: int,
     foreign_pct: int,
-    ornaments: Optional[list] = None,
+    ornaments: Optional[list] = None,  # noqa: ARG001 — legacy v1 signature
 ) -> CollateralResult:
-    """Legacy one-shot entry point (v1 orchestrator): analyze → match → crop."""
-    result = await analyze_collateral(images, max_ornaments, foreign_pct, ornaments)
+    """Legacy one-shot entry point (v1 orchestrator): analyze → crop."""
+    result = await analyze_collateral(images, max_ornaments, foreign_pct)
     try:
-        match_items(result, ornaments or [])
-        await asyncio.to_thread(crop_matched, result, images)
+        await asyncio.to_thread(crop_detections, result, images)
     except Exception:  # noqa: BLE001 — thumbnails are cosmetic; keep the validation result
-        logger.exception("Collateral thumbnail mapping failed")
+        logger.exception("Collateral thumbnail cropping failed")
     return result

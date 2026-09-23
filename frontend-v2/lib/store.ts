@@ -29,7 +29,10 @@ export type DialogState =
   | { kind: "document" }
   | { kind: "override"; target: OverrideTarget; ref: string }
   | { kind: "edit"; ref: string }
+  | { kind: "add-item" }
+  | { kind: "remove-item"; ref: string }
   | { kind: "scale" }
+  | { kind: "scale-photo" }
   | { kind: "lightbox"; src: string; title: string; contentType?: string; caption?: string }
   | { kind: "report" }
   | { kind: "new-session" };

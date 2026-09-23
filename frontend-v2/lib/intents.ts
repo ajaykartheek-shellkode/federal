@@ -8,7 +8,7 @@ import type { SessionView } from "./types";
 export type Intent =
   | { kind: "start"; account: string }
   | { kind: "need-account" }
-  | { kind: "open"; dialog: "collateral" | "damage" | "document" }
+  | { kind: "open"; dialog: "collateral" | "damage" | "document" | "scale-photo" }
   | { kind: "step"; action: "continue" | "report" | "measure" }
   | { kind: "show-items" }
   | { kind: "ask"; question: string };
@@ -38,7 +38,8 @@ const SHOW_ITEMS = oneOf([
   "pledged items", "pledged inventory", "pledged details", "show pledged details", "show the pledged details",
   "inventory", "items", "list items", "list the items", "show details", "show the details", "show collateral details",
 ]);
-const MEASURE = oneOf(["measure", "weigh", "weigh items", "fetch readings", "fetch", "get readings", "caratmeter", "carat meter", "measure weight", "measure purity", "re-measure", "remeasure", "measure again"]);
+const MEASURE = oneOf(["measure", "assay", "fetch readings", "fetch", "get readings", "fetch purity", "get purity", "caratmeter", "carat meter", "measure purity", "re-measure", "remeasure", "re-assay", "measure again"]);
+const SCALE_PHOTO = oneOf(["scale photo", "machine photo", "weighing machine", "weighing machine photo", "upload scale", "upload scale photo", "upload machine photo", "weigh total", "total weight"]);
 const UPLOAD_DOCS = oneOf(["upload", "upload document", "upload documents", "upload aadhaar", "add document", "upload id", "upload id proof", "upload kyc"]);
 
 export function parseIntent(raw: string, session: SessionView | null): Intent {
@@ -60,6 +61,7 @@ export function parseIntent(raw: string, session: SessionView | null): Intent {
       if (CONTINUE.test(t) && can("continue")) return { kind: "step", action: "continue" };
       break;
     case "weight":
+      if (SCALE_PHOTO.test(t)) return { kind: "open", dialog: "scale-photo" };
       if (MEASURE.test(t) && can("measure")) return { kind: "step", action: "measure" };
       if (CONTINUE.test(t) && can("continue")) return { kind: "step", action: "continue" };
       break;

@@ -67,13 +67,12 @@ class BoundingBox(BaseModel):
 
 
 class DetectedItem(BaseModel):
-    """One ornament the Vision model located in a collateral image."""
+    """One ornament the Vision model located in a collateral image — a row of the inventory."""
 
-    label: str = ""  # short descriptor, e.g. "gold chain" (NOT an identity claim)
+    label: str = ""  # what it is, e.g. "Gold Chain" (a physical descriptor, never an identity claim)
     box: BoundingBox = Field(default_factory=BoundingBox)
-    # Filled server-side after cropping / mapping (not asked of the model):
+    # Filled server-side after cropping (not asked of the model):
     thumb_asset_id: Optional[str] = None
-    matched_ornament_id: Optional[str] = None
 
 
 class CollateralImageResult(BaseModel):
@@ -88,12 +87,8 @@ class CollateralImageResult(BaseModel):
     ornament_count_estimate: int
     # Estimated share of the image occupied by foreign/unrelated objects (0-100).
     foreign_object_percent: int = 0
-    # Per-item detections with bounding boxes (used for cropped thumbnails).
+    # Per-item detections with bounding boxes — these become the pledged inventory.
     items: List[DetectedItem] = Field(default_factory=list)
-    # Weighing-scale display captured with the ornaments (total weight of everything on the pan).
-    scale_reading_visible: bool = False
-    scale_weight_g: Optional[float] = None
-    scale_reading_text: str = ""
     issues: List[str] = Field(default_factory=list)
 
 
@@ -102,6 +97,18 @@ class CollateralResult(BaseModel):
     images: List[CollateralImageResult] = Field(default_factory=list)
     issues: List[str] = Field(default_factory=list)
     corrective_actions: List[str] = Field(default_factory=list)
+
+
+# --------------------------------------------------------------------------- #
+# Agent output: Weighing-machine photo (the total weight of the collateral)
+# --------------------------------------------------------------------------- #
+class ScaleResult(BaseModel):
+    status: Status
+    reading_visible: bool = False
+    weight_g: Optional[float] = None
+    reading_text: str = ""  # exactly as shown on the display, including the unit
+    ornaments_on_pan: bool = True
+    issues: List[str] = Field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- #

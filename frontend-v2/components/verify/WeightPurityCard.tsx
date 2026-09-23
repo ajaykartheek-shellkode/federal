@@ -49,61 +49,64 @@ function Reconciliation({ session }: { session: SessionView }) {
   const { openDialog } = useVerification();
   const w = session.weight;
   const locked = session.workflow_state === "done";
-  const hasPhotos = session.collateral.images.length > 0;
-  const basis = w.measured_complete ? "CaratMeter" : "CBS-declared";
   const settled = w.scale_status === "match" || w.scale_overridden;
 
-  let scaleCaption: ReactNode = "Captured with the collateral photo";
+  let machineCaption: ReactNode = "Upload the machine photo, or type the total";
   if (w.scale_source === "photo") {
-    scaleCaption = (
+    machineCaption = (
       <>
-        Read from photo {(w.scale_photo ?? 0) + 1}
+        Read from the machine photo
         {w.scale_text && <span className="font-mono"> · “{w.scale_text}”</span>}
       </>
     );
   } else if (w.scale_source === "assessor") {
-    scaleCaption = "Entered by the assessor";
-  } else if (hasPhotos) {
-    scaleCaption = session.ai_enabled ? "Display not readable in the photos" : "Enter it from the scale display";
+    machineCaption = "Entered by the assessor";
+  } else if (session.scale) {
+    machineCaption = session.ai_enabled ? "Display not readable in the photo" : "Type the total from the display";
   }
 
   return (
     <div className="space-y-2.5">
       <div className="grid gap-3 md:grid-cols-3">
         <Tile
+          icon="gem"
+          label="Entered per item"
+          value={formatWeight(w.entered_g)}
+          caption={
+            w.unweighed.length
+              ? `${w.unweighed.length} still to weigh · ${w.unweighed.slice(0, 2).join(", ")}`
+              : `${plural(session.stats.items, "ornament")} weighed at the counter`
+          }
+          tone={w.unweighed.length ? "warn" : "ok"}
+        />
+        <Tile
           icon="weighScale"
-          label="Weighing scale"
+          label="Weighing machine"
           value={w.scale_g !== null ? formatWeight(w.scale_g) : <span className="text-ink-faint">—</span>}
-          caption={scaleCaption}
+          caption={machineCaption}
           tone={w.scale_status === "match" ? "ok" : w.scale_status === "mismatch" && !w.scale_overridden ? "warn" : "neutral"}
           action={
-            hasPhotos && !locked ? (
+            !locked ? (
               <button
                 type="button"
                 onClick={() => openDialog({ kind: "scale" })}
                 className="rounded-md px-1.5 py-0.5 text-2xs font-semibold text-brand-600 transition-colors hover:bg-brand-50"
               >
-                {w.scale_g !== null ? "Correct" : "Enter"}
+                {w.scale_g !== null ? "Correct" : "Type total"}
               </button>
             ) : undefined
           }
         />
         <Tile
           icon="cpu"
-          label="CaratMeter total"
+          label="CaratMeter"
           value={w.measured_g !== null ? formatWeight(w.measured_g) : <span className="text-ink-faint">—</span>}
           caption={
             session.measurements
-              ? `${session.measurements.count} of ${plural(session.inventory.length, "item")} · ${formatTime(session.measurements.measured_at)}`
-              : "Awaiting readings"
+              ? `${session.measurements.count} of ${plural(session.inventory.length, "ornament")} assayed · ${formatTime(session.measurements.measured_at)}`
+              : "Awaiting the assay"
           }
           tone={session.measurements ? (w.flagged ? "warn" : "ok") : "neutral"}
-        />
-        <Tile
-          icon="bank"
-          label="CBS declared"
-          value={formatWeight(w.declared_g)}
-          caption={`${plural(session.stats.items, "item")} · ${plural(session.stats.pieces, "piece")}`}
         />
       </div>
 
@@ -123,17 +126,17 @@ function Reconciliation({ session }: { session: SessionView }) {
             <Icon name={w.scale_overridden ? "pen" : settled ? "checkCircle" : "alert"} size={14} className="shrink-0" />
             <span className="min-w-0 flex-1 font-semibold">
               {w.scale_status === "match" &&
-                `Scale reading agrees with the ${basis} total (tolerance ±${formatWeight(w.tolerance_g)})`}
+                `The machine agrees with the weights entered (tolerance ±${formatWeight(w.tolerance_g)})`}
               {w.scale_status === "mismatch" &&
-                `Scale reading differs from the ${basis} total by ${formatWeight(Math.abs(w.scale_diff_g ?? 0))} (tolerance ±${formatWeight(w.tolerance_g)})`}
-              {w.scale_status === "missing" && "No weighing-scale reading captured for this collateral"}
+                `The machine differs from the weights entered by ${formatWeight(Math.abs(w.scale_diff_g ?? 0))} (tolerance ±${formatWeight(w.tolerance_g)})`}
+              {w.scale_status === "missing" && "The machine display could not be read — type the total instead"}
               {w.scale_overridden && " — accepted by the assessor"}
             </span>
             {!locked && !w.scale_overridden && !settled && (
               <span className="flex gap-1.5">
                 {w.scale_status === "missing" && (
                   <Button size="sm" variant="secondary" icon="pen" onClick={() => openDialog({ kind: "scale" })}>
-                    Enter reading
+                    Type total
                   </Button>
                 )}
                 <Button size="sm" variant="ghost" onClick={() => openDialog({ kind: "override", target: "scale", ref: "scale" })}>
@@ -149,9 +152,10 @@ function Reconciliation({ session }: { session: SessionView }) {
 }
 
 function MeasurePrompt({ session }: { session: SessionView }) {
-  const { runStep, state } = useVerification();
+  const { runStep, openDialog, state } = useVerification();
   const canMeasure = session.allowed_actions.includes("measure");
   const w = session.weight;
+  const ready = w.unweighed.length === 0 && session.inventory.length > 0;
 
   if (!canMeasure) {
     return (
@@ -160,8 +164,11 @@ function MeasurePrompt({ session }: { session: SessionView }) {
           <Icon name="cpu" size={19} />
         </span>
         <div>
-          <p className="text-sm font-semibold text-ink-2">Next: CaratMeter readings</p>
-          <p className="text-xs text-ink-muted">Once the collateral photos are verified, each ornament is measured for net weight and XRF purity.</p>
+          <p className="text-sm font-semibold text-ink-2">Next: weigh each ornament</p>
+          <p className="text-xs text-ink-muted">
+            Once the collateral photo has listed the ornaments, enter each weight, photograph the machine total, then ask the
+            CaratMeter for the purity.
+          </p>
         </div>
       </div>
     );
@@ -179,21 +186,31 @@ function MeasurePrompt({ session }: { session: SessionView }) {
         <span className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-cream bg-ok" title="Device connected" />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-bold text-ink">Place each ornament on the CaratMeter</p>
+        <p className="text-sm font-bold text-ink">
+          {ready ? "Ask the CaratMeter for the purity" : `Weigh the remaining ${w.unweighed.length} ornament${w.unweighed.length === 1 ? "" : "s"} first`}
+        </p>
         <p className="mt-0.5 text-xs leading-relaxed text-ink-2">
-          Net weight and XRF purity are read per item, graded against the valuation table and compared with CBS (±
-          {formatWeight(w.item_tolerance_g)} weight · {w.purity_tolerance_pct} pts purity margin).
+          One request for this loan application sends every ornament id and returns each assay, graded against the valuation
+          table and checked against the weight you entered (±{formatWeight(w.item_tolerance_g)} · {w.purity_tolerance_pct} pts margin).
         </p>
       </div>
-      <Button variant="gold" icon="weighScale" disabled={!!state.busy} onClick={() => runStep("measure")}>
-        Fetch readings
-      </Button>
+      <span className="flex flex-wrap gap-2">
+        {!session.scale && (
+          <Button variant="secondary" icon="weighScale" disabled={!!state.busy} onClick={() => openDialog({ kind: "scale-photo" })}>
+            Machine photo
+          </Button>
+        )}
+        <Button variant="gold" icon="cpu" disabled={!!state.busy || !ready} onClick={() => runStep("measure")}>
+          Fetch purity
+        </Button>
+      </span>
     </motion.div>
   );
 }
 
 export default function WeightPurityCard({ session }: { session: SessionView }) {
-  const { state, runStep } = useVerification();
+  const { state, runStep, openDialog } = useVerification();
+  const locked = session.workflow_state === "done";
   const w = session.weight;
   const measuring = Object.values(state.runs).some((r) => r.agent === "weight" && !r.done);
   const canMeasure = session.allowed_actions.includes("measure");
@@ -208,7 +225,7 @@ export default function WeightPurityCard({ session }: { session: SessionView }) 
         title="Weight & purity"
         subtitle={
           <span className="flex flex-wrap items-center gap-x-2">
-            <span>{device?.model || session.caratmeter.model}</span>
+            <span>Weights entered here · machine photo for the total · {device?.model || session.caratmeter.model}</span>
             <span className="font-mono">· {device?.device_id || session.caratmeter.device_id}</span>
             <span className="inline-flex items-center gap-1">
               · <span className="h-1.5 w-1.5 rounded-full bg-ok" /> {session.caratmeter.mode === "mock" ? "Simulated device" : "Device gateway"}
@@ -219,12 +236,17 @@ export default function WeightPurityCard({ session }: { session: SessionView }) 
           <>
             {measured && !measuring && (
               <Badge tone={w.flagged ? "warn" : "ok"} dot>
-                {w.flagged ? `${w.flagged} to review` : `${matches}/${session.inventory.length} match`}
+                {w.flagged ? `${w.flagged} to review` : `${matches}/${session.inventory.length} assayed`}
               </Badge>
+            )}
+            {canMeasure && !locked && (
+              <Button size="sm" variant="secondary" icon="weighScale" disabled={!!state.busy} onClick={() => openDialog({ kind: "scale-photo" })}>
+                {session.scale ? "Re-take machine photo" : "Machine photo"}
+              </Button>
             )}
             {canMeasure && measured && (
               <Button size="sm" variant="secondary" icon="refresh" loading={measuring} disabled={!!state.busy} onClick={() => runStep("measure")}>
-                Re-measure
+                Re-assay
               </Button>
             )}
           </>
@@ -236,7 +258,7 @@ export default function WeightPurityCard({ session }: { session: SessionView }) 
         {(measured || measuring) && (
           <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-2xs text-ink-muted">
             <span className="flex items-center gap-1">
-              <Icon name="info" size={12} /> Per-item readings are in the <span className="font-semibold text-ink-2">Pledged inventory</span> table below
+              <Icon name="info" size={12} /> Each ornament&apos;s assay is in the <span className="font-semibold text-ink-2">Pledged inventory</span> table below
             </span>
             <span>Tolerance ±{formatWeight(w.item_tolerance_g)} per item · purity margin {w.purity_tolerance_pct} pts</span>
             {device?.calibrated_at && <span>Calibrated {formatTime(device.calibrated_at)}</span>}

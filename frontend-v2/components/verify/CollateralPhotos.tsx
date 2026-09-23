@@ -17,9 +17,7 @@ function PhotoCard({ image, session }: { image: CollateralImage; session: Sessio
   const checked = image.status !== "not_checked";
   const ring = { pass: "ring-ok-line", alert: "ring-warn-line", fail: "ring-bad-line", not_checked: "ring-line" }[image.status];
   const matchedNames = image.matched.map((id) => session.inventory.find((i) => i.id === id)?.name).filter(Boolean);
-  const weighs = session.steps?.includes("weight");
-  const scale = image.scale;
-  const usedReading = session.scale?.source === "photo" && session.scale.photo_index === image.index;
+  const listed = image.matched.length;
 
   return (
     <motion.article
@@ -51,15 +49,14 @@ function PhotoCard({ image, session }: { image: CollateralImage; session: Sessio
         <span className="absolute left-2 top-2">
           <ResultBadge status={image.status} className="shadow-xs" />
         </span>
-        {weighs && scale?.visible && scale.weight_g !== null && (
+        {listed > 0 && (
           <motion.span
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.35, delay: 0.2, ease }}
-            className="pointer-events-none absolute right-2 top-2 flex items-center gap-1.5 rounded-lg bg-brand-950/80 px-2 py-1 text-xs font-bold tabular-nums text-white shadow-raised backdrop-blur"
-            title={scale.text ? `Display: ${scale.text}` : undefined}
+            className="pointer-events-none absolute right-2 top-2 flex items-center gap-1.5 rounded-lg bg-brand-950/80 px-2 py-1 text-xs font-bold text-white shadow-raised backdrop-blur"
           >
-            <Icon name="weighScale" size={13} className="text-gold-400" /> {formatWeight(scale.weight_g)}
+            <Icon name="gem" size={13} className="text-gold-400" /> {listed} listed
           </motion.span>
         )}
       </div>
@@ -73,7 +70,7 @@ function PhotoCard({ image, session }: { image: CollateralImage; session: Sessio
         {checked ? (
           <>
             <p className="mt-0.5 text-xs text-ink-muted">
-              {plural(image.ornament_count_estimate, "piece")} detected · {plural(image.matched.length, "item")} matched
+              {plural(image.ornament_count_estimate, "piece")} detected · {plural(listed, "ornament")} added to the list
               {image.foreign_object_percent > 0 && ` · ${image.foreign_object_percent}% foreign objects`}
             </p>
             <ul className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-1">
@@ -86,19 +83,6 @@ function PhotoCard({ image, session }: { image: CollateralImage; session: Sessio
                   </li>
                 );
               })}
-              {weighs && (
-                <li className={cn("col-span-2 flex items-center gap-1.5 text-xs", scale?.visible ? "text-ink-2" : "text-ink-muted")}>
-                  <Icon name={scale?.visible ? "checkCircle" : "info"} size={13} className={cn("shrink-0", scale?.visible ? "text-ok" : "text-ink-faint")} />
-                  {scale?.visible && scale.weight_g !== null ? (
-                    <span className="min-w-0">
-                      Scale display read <span className="font-semibold tabular-nums text-ink">{formatWeight(scale.weight_g)}</span>
-                      {usedReading && <span className="text-ink-faint"> · used for reconciliation</span>}
-                    </span>
-                  ) : (
-                    <span className="min-w-0">Scale display not readable in this photo</span>
-                  )}
-                </li>
-              )}
             </ul>
             {image.issues.length > 0 && (
               <div className="mt-2.5 space-y-1 rounded-lg bg-warn-soft px-2.5 py-2">
@@ -127,7 +111,6 @@ export default function CollateralPhotos({ session }: { session: SessionView }) 
   const { openDialog } = useVerification();
   const { collateral, stats } = session;
   const canUpload = session.allowed_actions.includes("collateral");
-  const sighted = stats.verified + stats.overridden;
   const latestUpload = Math.max(0, ...collateral.images.map((i) => i.upload_no));
   const latestFlagged = collateral.images.some((i) => i.upload_no === latestUpload && (i.status === "alert" || i.status === "fail"));
 
@@ -136,12 +119,12 @@ export default function CollateralPhotos({ session }: { session: SessionView }) 
       <CardHeader
         icon="camera"
         title="Collateral photos"
-        subtitle="Clarity · visibility · cropping · obstruction · foreign objects · background"
+        subtitle="Every ornament in the photo becomes a line on the pledge list · clarity, visibility, cropping, foreign objects"
         actions={
           <>
             {collateral.images.length > 0 && (
-              <Badge tone={sighted === stats.items ? "ok" : "warn"} dot>
-                {sighted}/{stats.items} sighted
+              <Badge tone={stats.items ? "ok" : "warn"} dot>
+                {plural(stats.items, "ornament")} listed
               </Badge>
             )}
             {canUpload && collateral.images.length > 0 && (
@@ -158,11 +141,7 @@ export default function CollateralPhotos({ session }: { session: SessionView }) 
             <EmptyState
               icon="camera"
               title="No collateral photos yet"
-              hint={
-                session.steps?.includes("weight")
-                  ? "Photograph all pledged ornaments together on the weighing scale with its display readable. The agent checks quality, reads the scale and matches every item to CBS."
-                  : "Photograph all pledged ornaments together on a plain surface. The agent checks quality and matches every item to CBS."
-              }
+              hint="Photograph all pledged ornaments together on a plain surface. The agent checks the capture and lists every ornament it can see, ready for you to weigh."
             />
             {canUpload && (
               <div className="-mt-3 flex justify-center pb-6">

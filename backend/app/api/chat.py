@@ -8,11 +8,14 @@
   POST /api/chat/override             {session_id, target, ref, justification} -> {session, entry}
   POST /api/chat/edit                 {session_id, ref, changes, justification} -> {session, entry}
   POST /api/chat/scale                {session_id, weight_g, justification}     -> {session, entry}
+  POST /api/chat/item                 {session_id, name, material, quantity, weight_gm} -> {session, item}
+  POST /api/chat/item/remove          {session_id, ref, justification}          -> {session, entry}
+  POST /api/chat/weight               {session_id, ref, weight_gm, justification} -> {session, entry}
 
-/step form fields: session_id, action (collateral|measure|damage|document|continue|report),
-damage_hints (JSON [{ornament_id, type, severity, details}] aligned with damage_images),
-document_types (JSON [type] aligned with documents), collateral_images[], damage_images[],
-documents[].
+/step form fields: session_id, action (collateral|scale_photo|measure|damage|document|continue|report),
+damage_hints (JSON [{ornament_id, type, severity, damage_percent, details}] aligned with damage_images),
+document_types (JSON [type] aligned with documents), collateral_images[], scale_image[],
+damage_images[], documents[].
 """
 
 from __future__ import annotations
@@ -94,9 +97,7 @@ async def start(body: StartBody):
     message = await conversation.guidance("welcome", {
         "customer": loan.get("customer_name", ""),
         "scenario": loan.get("scenario", ""),
-        "items": len(state["inventory"]),
-        "pieces": sum(r["quantity"] for r in state["inventory"]),
-        "cbs_damaged": [r["name"] for r in state["inventory"] if r["cbs_damage"]],
+        "branch": loan.get("branch", ""),
         "ai_enabled": ai_enabled,
     }, ai_enabled)
     return {"session": S.view(state, settings), "message": message}
@@ -169,10 +170,16 @@ def _parse_json_list(raw: str, field: str) -> list:
     return value
 
 
-def _build_inputs(state: dict, action: str, collateral: List[Asset], damage: List[Asset], documents: List[Asset],
-                  damage_hints: str, document_types: str) -> flow.StepInput:
+def _build_inputs(state: dict, action: str, collateral: List[Asset], scale: List[Asset], damage: List[Asset],
+                  documents: List[Asset], damage_hints: str, document_types: str) -> flow.StepInput:
     inputs = flow.StepInput()
-    if action == "collateral":
+    if action == "scale_photo":
+        if len(scale) != 1:
+            raise ApiError(400, "Attach one photo of the weighing machine.")
+        _check_image(scale[0])
+        inputs.scale = scale[0]
+
+    elif action == "collateral":
         if not collateral:
             raise ApiError(400, "Attach at least one collateral photo.")
         if len(collateral) > MAX_COLLATERAL_PHOTOS_PER_UPLOAD:
@@ -202,11 +209,17 @@ def _build_inputs(state: dict, action: str, collateral: List[Asset], damage: Lis
                 raise ApiError(400, f"Unknown damage type '{dtype}'.")
             if severity not in S.SEVERITIES:
                 raise ApiError(400, f"Unknown severity '{severity}'.")
+            try:
+                damage_pct = round(float(hint.get("damage_percent") or 0), 2)
+            except (TypeError, ValueError):
+                raise ApiError(400, "The damage percentage must be a number.") from None
+            if not 0 <= damage_pct <= 100:
+                raise ApiError(400, "The damage percentage must be between 0 and 100.")
             details = " ".join(str(hint.get("details") or "").split())[:300]
             if dtype == "Other" and not details:
                 raise ApiError(400, "Describe the damage when the type is 'Other'.")
             _check_image(image)
-            inputs.damage.append(flow.DamageUpload(oid, dtype, severity, details, image))
+            inputs.damage.append(flow.DamageUpload(oid, dtype, severity, damage_pct, details, image))
 
     elif action == "document":
         types = _parse_json_list(document_types, "document types")
@@ -220,7 +233,7 @@ def _build_inputs(state: dict, action: str, collateral: List[Asset], damage: Lis
             _check_document(asset)
             inputs.documents.append(flow.DocumentUpload(dtype, asset))
 
-    elif collateral or damage or documents:
+    elif collateral or scale or damage or documents:
         raise ApiError(400, f"'{action}' does not accept file uploads.")
     return inputs
 
@@ -232,6 +245,7 @@ async def step(
     damage_hints: str = Form("[]"),
     document_types: str = Form("[]"),
     collateral_images: List[UploadFile] = File(default_factory=list),
+    scale_image: List[UploadFile] = File(default_factory=list),
     damage_images: List[UploadFile] = File(default_factory=list),
     documents: List[UploadFile] = File(default_factory=list),
 ):
@@ -251,8 +265,12 @@ async def step(
             S.require_action(state, action)
         except S.WorkflowError as exc:
             raise ApiError(409, str(exc), session=S.view(state, await asyncio.to_thread(get_settings))) from None
-        coll, dmg, docs = await _read(collateral_images), await _read(damage_images), await _read(documents)
-        inputs = await asyncio.to_thread(_build_inputs, state, action, coll, dmg, docs, damage_hints, document_types)
+        coll, scale, dmg, docs = (
+            await _read(collateral_images), await _read(scale_image), await _read(damage_images), await _read(documents),
+        )
+        inputs = await asyncio.to_thread(
+            _build_inputs, state, action, coll, scale, dmg, docs, damage_hints, document_types,
+        )
         settings = await asyncio.to_thread(get_settings)
 
         queue: asyncio.Queue = asyncio.Queue()
@@ -316,8 +334,9 @@ def _qa_context(v: dict) -> dict:
         "inventory": [
             {
                 "item": r["name"], "material": r.get("material", "gold"), "purity": S.purity_label(r),
-                "declared_weight_g": r["weight_gm"], "quantity": r["quantity"], "sighting": r["status"],
-                "cbs_damage": r["cbs_damage_details"] if r.get("cbs_damage") else "",
+                "entered_weight_g": r["weight_gm"], "quantity": r["quantity"],
+                "listed_from": "collateral photo" if r.get("origin", "detected") == "detected" else "added by assessor",
+                "damage_percent": r.get("damage_percent") or 0,
                 "caratmeter": (
                     {k: r["measurement"][k] for k in ("weight_g", "fineness_pct", "grade")} if r.get("measurement") else None
                 ),
@@ -326,10 +345,10 @@ def _qa_context(v: dict) -> dict:
             for r in v["inventory"]
         ],
         "collateral_photos": [
-            {"photo": im["index"] + 1, "status": im["status"], "issues": im["issues"], "scale_g": (im.get("scale") or {}).get("weight_g")}
+            {"photo": im["index"] + 1, "status": im["status"], "issues": im["issues"]}
             for im in v["collateral"]["images"]
         ],
-        "weight": {k: weight.get(k) for k in ("declared_g", "measured_g", "scale_g", "scale_source", "scale_status", "scale_diff_g", "tolerance_g")},
+        "weight": {k: weight.get(k) for k in ("entered_g", "measured_g", "scale_g", "scale_source", "scale_status", "scale_diff_g", "tolerance_g", "unweighed")},
         "pledge": {
             "totals": valuation.get("totals"),
             "damage_rule": valuation.get("damage_deduction_mode"),
@@ -339,7 +358,8 @@ def _qa_context(v: dict) -> dict:
             ],
         },
         "damages": [
-            {k: d.get(k) for k in ("item", "type", "severity", "status", "notes", "overridden")} for d in v["damages"]
+            {k: d.get(k) for k in ("item", "type", "severity", "damage_percent", "status", "notes", "overridden")}
+            for d in v["damages"]
         ],
         "documents": [
             {k: d.get(k) for k in ("declared_type", "doc_type_detected", "status", "issues", "matches", "overridden")}
@@ -418,3 +438,51 @@ async def edit(body: EditBody):
 @router.post("/scale")
 async def scale(body: ScaleBody):
     return await _mutate(body.session_id, lambda st: S.apply_scale_reading(st, body.weight_g, body.justification))
+
+
+# --------------------------------------------------------------------------- inventory
+class AddItemBody(BaseModel):
+    session_id: str
+    name: str = Field(default="", max_length=120)
+    material: str = Field(default="gold", max_length=24)
+    quantity: int = 1
+    weight_gm: float = 0
+
+
+class ItemRefBody(BaseModel):
+    session_id: str
+    ref: str
+    justification: str = Field(default="", max_length=500)
+
+
+class WeightBody(BaseModel):
+    session_id: str
+    ref: str
+    weight_gm: float
+    justification: str = Field(default="", max_length=500)
+
+
+@router.post("/item")
+async def add_item(body: AddItemBody):
+    """Add an ornament the collateral photo did not show (or the agent missed)."""
+    added: Dict[str, Any] = {}
+
+    def apply(st: dict):
+        added.update(S.add_item(st, body.name, material=body.material, quantity=body.quantity, weight_gm=body.weight_gm))
+        return None  # adding a row is data entry, not an override: nothing for the audit trail
+
+    result = await _mutate(body.session_id, apply)
+    if isinstance(result, dict):
+        result["item"] = added
+    return result
+
+
+@router.post("/item/remove")
+async def remove_item(body: ItemRefBody):
+    return await _mutate(body.session_id, lambda st: S.remove_item(st, body.ref, body.justification))
+
+
+@router.post("/weight")
+async def set_weight(body: WeightBody):
+    """The weight the assessor read off the machine for one ornament."""
+    return await _mutate(body.session_id, lambda st: S.set_item_weight(st, body.ref, body.weight_gm, body.justification))

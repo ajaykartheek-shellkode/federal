@@ -30,6 +30,7 @@ from app.agents import collateral as collateral_agent
 from app.agents import conversation
 from app.agents import damage as damage_agent
 from app.agents import document as document_agent
+from app.agents import scale as scale_agent
 from app.agents.assets import Asset
 from app.bedrock.imageprep import thumbnail
 from app.integrations import caratmeter
@@ -46,6 +47,7 @@ class DamageUpload:
     ornament_id: str
     type: str
     severity: str
+    damage_percent: float
     details: str
     image: Asset
 
@@ -59,6 +61,7 @@ class DocumentUpload:
 @dataclass
 class StepInput:
     collateral: List[Asset] = field(default_factory=list)
+    scale: Optional[Asset] = None
     damage: List[DamageUpload] = field(default_factory=list)
     documents: List[DocumentUpload] = field(default_factory=list)
 
@@ -155,29 +158,23 @@ async def _value(fn: Callable, *args):
 
 # --------------------------------------------------------------------------- collateral
 async def _collateral(ctx: StepContext) -> None:
+    """The collateral photo is the source of the inventory: every ornament detected becomes a row."""
     state, settings, photos = ctx.state, ctx.settings, ctx.inputs.collateral
-    defs = STEPS.COLLATERAL_STEPS if ctx.ai else STEPS.COLLATERAL_MANUAL_STEPS
-    if not S.uses_weight(state):
-        defs = [d for d in defs if d["key"] != "scale"]
-    ex = ExecRun(ctx, "collateral", defs)
+    ex = ExecRun(ctx, "collateral", STEPS.COLLATERAL_STEPS if ctx.ai else STEPS.COLLATERAL_MANUAL_STEPS)
     stored = await ex.step("receive", asyncio.to_thread(_store_uploads, photos))
 
+    added = 0
     if ctx.ai:
-        inventory = state["inventory"]
-        sighted = [r["id"] for r in inventory if r["status"] in S.ITEM_OK]
         result = await ex.step("vision", collateral_agent.analyze_collateral(
-            photos, settings.max_ornaments_per_image, settings.foreign_object_threshold_pct, inventory,
+            photos, settings.max_ornaments_per_image, settings.foreign_object_threshold_pct,
         ))
         await ex.step("detect")
         await ex.step("count")
-        await ex.step("crossverify", _value(collateral_agent.match_items, result, inventory, sighted))
         await ex.step("visibility")
         await ex.step("foreign")
         await ex.step("background")
-        if S.uses_weight(state):
-            await ex.step("scale")
-        await ex.step("crop", asyncio.to_thread(collateral_agent.crop_matched, result, photos, sighted))
-        S.record_collateral(state, stored, result.model_dump())
+        await ex.step("crop", asyncio.to_thread(collateral_agent.crop_detections, result, photos))
+        added = await ex.step("inventory", _value(S.record_collateral, state, stored, result.model_dump()))
     else:
         await ex.step("record")
         S.record_collateral(state, stored, None)
@@ -189,46 +186,82 @@ async def _collateral(ctx: StepContext) -> None:
 
     latest = state["collateral"]["images"][-len(photos):]
     status = S.worst(im["status"] for im in latest) or "not_checked"
-    stats = S.inventory_stats(state)
-    sighted = stats["verified"] + stats["overridden"]
-    await ex.finish(status, f"{sighted}/{stats['items']} items sighted · {len(photos)} photo{'s' if len(photos) != 1 else ''}")
+    items = state["inventory"]
+    photo_count = f"{len(photos)} photo{'s' if len(photos) != 1 else ''}"
+    await ex.finish(status, f"{len(items)} ornament{'s' if len(items) != 1 else ''} listed · {photo_count}")
     await ctx.push_state()
 
     flagged = next((im for im in latest if im["status"] in ("alert", "fail") and im["issues"]), None)
-    weight = S.weight_summary(state)
     await ctx.say("collateral", {
         "ai_enabled": ctx.ai,
         "advanced": advanced,
-        "next_step": "weight & purity" if state["workflow_state"] == "weight" else state["workflow_state"],
-        "weighs": S.uses_weight(state),
-        "scale_g": weight["scale_g"],
-        "verified": sighted,
-        "total": stats["items"],
-        "pending": [r["name"] for r in S.pending_items(state)],
-        "cbs_damaged": [r["name"] for r in S.undocumented_cbs_damage(state)],
+        "added": added,
+        "total": len(items),
+        "names": [r["name"] for r in items],
         "flagged_photo": (flagged["index"] + 1) if flagged else None,
         "first_issue": flagged["issues"][0] if flagged else "",
         "blocker": S.blocker_of(state, settings),
     })
 
 
+# --------------------------------------------------------------------------- weighing machine
+async def _scale_photo(ctx: StepContext) -> None:
+    """The weighing-machine photo: the total weight of everything on the pan."""
+    state, photo = ctx.state, ctx.inputs.scale
+    ex = ExecRun(ctx, "scale", STEPS.SCALE_STEPS if ctx.ai else STEPS.SCALE_MANUAL_STEPS)
+    stored = await ex.step("receive", asyncio.to_thread(_store_uploads, [photo]))
+
+    result = None
+    if ctx.ai:
+        reading = await ex.step("read", scale_agent.read_scale(photo))
+        result = reading.model_dump()
+        await ex.step("reconcile", _value(S.record_scale_photo, state, stored[0], result))
+    else:
+        S.record_scale_photo(state, stored[0], None)
+    await ex.step("result", ctx.save())
+
+    weight = S.weight_summary(state)
+    read_ok = weight["scale_g"] is not None
+    status = "pass" if read_ok and weight["scale_status"] != "mismatch" else "alert" if read_ok else "fail"
+    summary = f"{weight['scale_g']:.2f} g on the machine" if read_ok else "Display not readable"
+    await ex.finish(status if ctx.ai else "not_checked", summary)
+    await ctx.push_state()
+    await ctx.say("scale", {
+        "ai_enabled": ctx.ai,
+        "scale_g": weight["scale_g"],
+        "entered_g": weight["entered_g"],
+        "unweighed": weight["unweighed"],
+        "differs": weight["scale_status"] == "mismatch",
+        "diff_g": weight["scale_diff_g"],
+        "first_issue": (result or {}).get("issues", [""])[0] if (result or {}).get("issues") else "",
+        "measured": bool(state.get("measurements")),
+    })
+
+
 # --------------------------------------------------------------------------- weight & purity
 async def _measure(ctx: StepContext) -> None:
+    """One CaratMeter request for this loan application, covering every ornament id."""
     state, settings = ctx.state, ctx.settings
     loan = state["loan"]
     branch, account = loan.get("branch", ""), loan.get("account_number", "")
+    if not state["inventory"]:
+        raise S.WorkflowError("There are no ornaments to measure yet.")
+    missing = S.unweighed_items(state)
+    if missing:
+        names = ", ".join(r["name"] for r in missing[:3]) + ("…" if len(missing) > 3 else "")
+        raise S.WorkflowError(f"Enter the weight of {len(missing)} item(s) ({names}) before requesting the readings.")
+
     ex = ExecRun(ctx, "weight", STEPS.WEIGHT_STEPS)
     try:
         await ex.step("connect", caratmeter.status(branch))
-        payload = await ex.step("measure", caratmeter.measure(branch, account, state["inventory"]))
+        payload = await ex.step("request", caratmeter.measure(branch, account, state["inventory"]))
     except caratmeter.CaratMeterError as exc:
         await ctx.push_state()
         await ctx.emit("notice", {"level": "error", "text": str(exc)})
         await ctx.emit("agent-msg", {"text": conversation.draft("weight_error", {"error": str(exc)})})
         return
     await ex.step("grade", _value(S.record_measurements, state, payload))
-    await ex.step("crosscheck")
-    weight = await ex.step("scale", _value(S.weight_summary, state))
+    weight = await ex.step("crosscheck", _value(S.weight_summary, state))
     valuation = await ex.step("valuation", _value(S.valuation_view, state))
 
     blocker = S.blocker_of(state, settings)
@@ -239,24 +272,23 @@ async def _measure(ctx: StepContext) -> None:
 
     flagged = S.unresolved_measurements(state)
     totals = valuation["totals"]
-    status = "alert" if flagged or weight["scale_status"] == "mismatch" else "pass"
-    measured = weight["counts"]["match"] + sum(weight["counts"][s] for s in ("weight_mismatch", "purity_low", "mismatch"))
-    summary = f"{measured}/{len(state['inventory'])} measured · {weight['measured_g'] or 0:.2f} g"
+    status = "alert" if flagged else "pass"
+    measured = state["measurements"]["count"]
+    summary = f"{measured}/{len(state['inventory'])} ornaments assayed"
     await ex.finish(status, summary + (f" · {len(flagged)} to review" if flagged else ""))
     await ctx.push_state()
+    grades = [r["measurement"]["grade"] for r in state["inventory"] if (r.get("measurement") or {}).get("grade")]
     await ctx.say("weight", {
         "advanced": advanced,
         "total": len(state["inventory"]),
         "measured": measured,
-        "measured_g": weight["measured_g"],
+        "grades": sorted(set(grades)),
         "flagged": [r["name"] for r in flagged],
         "scale_g": weight["scale_g"],
+        "entered_g": weight["entered_g"],
         "scale_differs": weight["scale_status"] == "mismatch" and not weight["scale_overridden"],
-        "scale_missing": weight["scale_status"] == "missing" and not weight["scale_overridden"],
-        "scale_diff_g": weight["scale_diff_g"],
-        "scale_basis": "CaratMeter" if weight["measured_complete"] else "CBS-declared",
+        "scale_missing": weight["scale_status"] in ("pending", "missing") and not weight["scale_overridden"],
         "pledge_amount": totals["pledge_amount"],
-        "cbs_damaged": [r["name"] for r in S.undocumented_cbs_damage(state)],
         "blocker": blocker,
     })
 
@@ -274,7 +306,7 @@ async def _damage(ctx: StepContext) -> None:
         for u in uploads:
             row = S.find_item(state, u.ornament_id)
             calls.append(damage_agent.validate_damage(
-                u.ornament_id, row["name"], row["carat"], damage_agent.describe_damage(u.type, u.details), u.image,
+                u.ornament_id, row["name"], row.get("carat") or "", damage_agent.describe_damage(u.type, u.details), u.image,
             ))
         results = await ex.step("detect", asyncio.gather(*calls))
         await ex.step("type")
@@ -289,6 +321,7 @@ async def _damage(ctx: StepContext) -> None:
             "item": row["name"],
             "type": u.type,
             "severity": u.severity,
+            "damage_percent": u.damage_percent,
             "assessor_details": u.details,
             "asset_id": meta["asset_id"],
             "thumb_asset_id": thumb or meta["asset_id"],
@@ -314,7 +347,7 @@ async def _damage(ctx: StepContext) -> None:
         "ai_enabled": ctx.ai,
         "recorded": [S.find_item(state, u.ornament_id)["name"] for u in uploads],
         "needs_review": review,
-        "cbs_pending": [r["name"] for r in S.undocumented_cbs_damage(state)],
+        "deduction": round(sum(u.damage_percent for u in uploads), 2),
         "next_label": "pledge valuation" if following == "valuation" else "documents",
     })
 
@@ -412,6 +445,7 @@ def _persist_report(state: dict) -> None:
 
 HANDLERS = {
     "collateral": _collateral,
+    "scale_photo": _scale_photo,
     "measure": _measure,
     "damage": _damage,
     "document": _document,

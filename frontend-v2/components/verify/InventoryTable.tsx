@@ -9,16 +9,73 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import Icon from "@/components/ui/Icon";
 import Thumb from "@/components/ui/Thumb";
 import { assetUrl } from "@/lib/api";
-import { cn, formatINR, formatWeight, MEASURE_META, plural, purityLabel } from "@/lib/format";
+import { cn, formatINR, formatWeight, ITEM_META, MEASURE_META, plural, purityLabel } from "@/lib/format";
 import { ease } from "@/lib/motion";
 import type { DamageEntry, InventoryItem, ItemStatus, SessionView, ValuedItem } from "@/lib/types";
 
 /**
- * The one collateral table of the verification: a row per pledged item, gaining the columns of
- * each step as it completes — sighting, then the CaratMeter reading, then damage, then the pledge
- * amount. Damage records open as a detail row under their item, so no step adds a second table.
+ * The one collateral table of the verification. The collateral photo puts the ornaments on it;
+ * the assessor weighs each one here; and it gains the columns of every step as it completes —
+ * the CaratMeter assay, then damage, then the pledge amount. Damage records open as a detail row
+ * under their item, so no step adds a second table.
  */
-const FLAGGED = ["weight_mismatch", "purity_low", "mismatch", "missing"];
+const FLAGGED = ["weight_mismatch", "ungraded", "mismatch", "missing"];
+
+/** Weight entry: a plain input until the weight is recorded, then a value the pencil can correct. */
+function WeightCell({ item, locked }: { item: InventoryItem; locked: boolean }) {
+  const { setWeight, openDialog, state } = useVerification();
+  const [value, setValue] = useState("");
+  const [saving, setSaving] = useState(false);
+  const recorded = item.weight_gm > 0;
+
+  if (recorded || locked) {
+    return (
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+        <span className="font-semibold tabular-nums text-ink">{recorded ? formatWeight(item.weight_gm) : "—"}</span>
+        {!locked && (
+          <button
+            type="button"
+            title={`Correct the weight of ${item.name}`}
+            aria-label={`Correct the weight of ${item.name}`}
+            onClick={() => openDialog({ kind: "edit", ref: item.id })}
+            className="text-ink-faint transition-colors hover:text-brand-600"
+          >
+            <Icon name="pen" size={13} />
+          </button>
+        )}
+      </span>
+    );
+  }
+
+  const save = async () => {
+    const grams = Number(value);
+    if (!(grams > 0) || saving) return;
+    setSaving(true);
+    const ok = await setWeight(item.id, grams);
+    setSaving(false);
+    if (ok) setValue("");
+  };
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <input
+        type="number"
+        inputMode="decimal"
+        step="0.001"
+        min="0"
+        value={value}
+        disabled={saving || !!state.busy}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && void save()}
+        onBlur={() => void save()}
+        placeholder="0.00"
+        aria-label={`Weight of ${item.name} in grams`}
+        className="h-8 w-[72px] rounded-lg border border-line-strong bg-surface px-2 text-right text-sm font-semibold tabular-nums text-ink outline-none transition-[border-color,box-shadow] placeholder:font-normal placeholder:text-ink-faint focus:border-brand-500 focus:shadow-focus disabled:bg-subtle"
+      />
+      <span className="text-2xs text-ink-muted">g</span>
+    </span>
+  );
+}
 
 interface RowContext {
   item: InventoryItem;
@@ -47,7 +104,7 @@ function useFlash(status: ItemStatus) {
   return flash;
 }
 
-function IconAction({ icon, label, onClick }: { icon: "pen" | "alert"; label: string; onClick: () => void }) {
+function IconAction({ icon, label, onClick }: { icon: "pen" | "alert" | "trash"; label: string; onClick: () => void }) {
   return (
     <button
       type="button"
@@ -61,20 +118,14 @@ function IconAction({ icon, label, onClick }: { icon: "pen" | "alert"; label: st
   );
 }
 
-function DamageChip({ item, damage }: { item: InventoryItem; damage?: DamageEntry }) {
-  if (damage) return <ResultBadge status={damage.status} overridden={damage.overridden} />;
-  if (item.cbs_damage) {
-    return item.cbs_damage_waived ? (
-      <Badge tone="neutral" title="CBS-declared damage waived by the assessor">
-        Waived
-      </Badge>
-    ) : (
-      <Badge tone="warn" dot title={item.cbs_damage_details}>
-        Not recorded
-      </Badge>
-    );
-  }
-  return <span className="text-ink-faint">—</span>;
+function DamageChip({ damage }: { damage?: DamageEntry }) {
+  if (!damage) return <span className="text-ink-faint">—</span>;
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+      <ResultBadge status={damage.status} overridden={damage.overridden} />
+      {damage.damage_percent > 0 && <span className="text-2xs tabular-nums text-ink-muted">−{damage.damage_percent}%</span>}
+    </span>
+  );
 }
 
 function ItemRow({ ctx, columns }: { ctx: RowContext; columns: Column[] }) {
@@ -240,51 +291,39 @@ export default function InventoryTable({ session }: { session: SessionView }) {
             {item.name}
             {item.quantity > 1 && <span className="ml-1 text-xs font-normal text-ink-muted">×{item.quantity}</span>}
           </p>
-          <p className="mt-0.5 font-mono text-2xs text-ink-faint">{item.id}</p>
+          <p className="mt-0.5 flex items-center gap-2 font-mono text-2xs text-ink-faint">
+            {item.id}
+            {item.material !== "gold" && <span className="font-sans capitalize">{item.material}</span>}
+            {item.origin === "manual" && (
+              <span className="font-sans" title={ITEM_META.manual.hint}>
+                <Badge tone="brand">Added</Badge>
+              </span>
+            )}
+          </p>
         </>
       ),
     },
     {
-      key: "declared",
-      header: "CBS declared",
+      key: "weight",
+      header: "Weight",
       footer: <span className="font-semibold tabular-nums text-ink">{formatWeight(stats.total_weight)}</span>,
-      cell: ({ item }) => (
-        <span className="whitespace-nowrap text-ink-2">
-          <span className="font-semibold text-ink">{purityLabel(item)}</span> · {formatWeight(item.weight_gm)}
-          {item.material && item.material !== "gold" && <span className="block text-2xs capitalize text-ink-faint">{item.material}</span>}
-        </span>
-      ),
-    },
-    {
-      key: "sighting",
-      header: "Sighting",
-      cell: ({ item }) => (
-        <motion.span
-          key={item.status}
-          initial={{ scale: 0.85, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: "spring", stiffness: 500, damping: 24 }}
-          className="inline-block"
-        >
-          <ItemBadge status={item.status} awaitingPhoto={!hasPhotos} />
-        </motion.span>
-      ),
+      cell: ({ item }) => <WeightCell item={item} locked={locked} />,
     },
   ];
 
   if (showReading) {
     columns.push(
       {
-        // Purity only — the weights are reconciled on the Weight & purity card.
+        // Purity comes from the assay; the weights are reconciled on the Weight & purity card.
         key: "reading",
         header: "CaratMeter purity",
         cell: ({ item }) => {
           const m = item.measurement;
-          if (!m) return <span className="text-ink-faint">Not measured</span>;
+          if (!m) return <span className="text-ink-faint">Not assayed</span>;
           return (
             <motion.span key={m.measured_at} initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease }} className="inline-flex items-center gap-1.5 whitespace-nowrap">
               <span className="font-semibold tabular-nums text-ink">{m.fineness_pct.toFixed(2)}%</span>
-              <Badge tone={!m.grade ? "bad" : m.grade.replace(/K$/, "") !== item.carat ? "warn" : "ok"}>{m.grade ?? "Ungraded"}</Badge>
+              <Badge tone={m.grade ? "ok" : "bad"}>{m.grade ?? "Ungraded"}</Badge>
             </motion.span>
           );
         },
@@ -312,7 +351,7 @@ export default function InventoryTable({ session }: { session: SessionView }) {
     columns.push({
       key: "damage",
       header: "Damage",
-      cell: ({ item, damage }) => <DamageChip item={item} damage={damage} />,
+      cell: ({ damage }) => <DamageChip damage={damage} />,
     });
   }
 
@@ -324,9 +363,11 @@ export default function InventoryTable({ session }: { session: SessionView }) {
       footer: <span className="font-bold tabular-nums text-brand-700">{formatINR(totals.pledge_amount)}</span>,
       cell: ({ valued }) => (
         <span className="whitespace-nowrap">
-          <span className="font-semibold tabular-nums text-ink">{formatINR(valued?.pledge_amount ?? 0)}</span>
-          <span className={cn("block text-2xs", valued?.weight_basis === "measured" ? "text-ok" : "text-ink-faint")}>
-            {valued?.weight_basis === "measured" ? "on measured wt" : "on declared wt"}
+          <span className={cn("font-semibold tabular-nums", valued?.unpriced ? "text-ink-faint" : "text-ink")}>
+            {formatINR(valued?.pledge_amount ?? 0)}
+          </span>
+          <span className={cn("block text-2xs", valued?.measured ? "text-ok" : "text-ink-faint")}>
+            {valued?.unpriced ? "not assayed yet" : `at ${formatINR(valued?.rate_per_gram ?? 0)}/g`}
           </span>
         </span>
       ),
@@ -339,7 +380,6 @@ export default function InventoryTable({ session }: { session: SessionView }) {
     align: "right",
     cell: ({ item }) => {
       const flagged = FLAGGED.includes(item.measurement_status ?? "pending") && !item.measurement_overridden;
-      const damagePending = session.cbs_damage_pending.includes(item.id);
       return (
         <div className="flex items-center justify-end gap-0.5 opacity-80 transition-opacity group-hover:opacity-100">
           {showReading && flagged && !locked && (
@@ -347,26 +387,17 @@ export default function InventoryTable({ session }: { session: SessionView }) {
               Accept
             </Button>
           )}
-          {item.status === "pending" && hasPhotos && !locked && (
-            <Button size="sm" variant="secondary" icon="shieldCheck" onClick={() => openDialog({ kind: "override", target: "item", ref: item.id })}>
-              Confirm
-            </Button>
-          )}
-          {damagePending && !locked && showDamage && (
-            <Button size="sm" variant="ghost" onClick={() => openDialog({ kind: "override", target: "damage", ref: item.id })}>
-              Waive
-            </Button>
-          )}
           {canRecordDamage && <IconAction icon="alert" label={`Record damage for ${item.name}`} onClick={() => openDialog({ kind: "damage", ornamentId: item.id })} />}
           {!locked && <IconAction icon="pen" label={`Correct ${item.name}`} onClick={() => openDialog({ kind: "edit", ref: item.id })} />}
+          {!locked && <IconAction icon="trash" label={`Remove ${item.name} from the list`} onClick={() => openDialog({ kind: "remove-item", ref: item.id })} />}
         </div>
       );
     },
   });
 
   const subtitle = [
-    `From CBS · ${plural(stats.items, "item")} · ${plural(stats.pieces, "piece")} · ${formatWeight(stats.total_weight)}`,
-    showReading && weight.measured_g !== null ? `CaratMeter ${formatWeight(weight.measured_g)}` : null,
+    `${plural(stats.items, "ornament")} from the photo · ${stats.weighed}/${stats.items} weighed · ${formatWeight(stats.total_weight)}`,
+    showReading ? `${stats.measured}/${stats.items} assayed` : null,
     showPledge ? `pledge ${formatINR(totals.pledge_amount)}` : null,
   ]
     .filter(Boolean)
@@ -380,9 +411,9 @@ export default function InventoryTable({ session }: { session: SessionView }) {
         subtitle={subtitle}
         actions={
           <div className="flex flex-wrap items-center justify-end gap-2">
-            {stats.pending > 0 && hasPhotos && (
-              <Badge tone="warn" dot>
-                {stats.pending} not sighted
+            {weight.unweighed.length > 0 && (
+              <Badge tone="warn" dot title={weight.unweighed.join(", ")}>
+                {weight.unweighed.length} to weigh
               </Badge>
             )}
             {showReading && weight.flagged > 0 && (
@@ -390,15 +421,15 @@ export default function InventoryTable({ session }: { session: SessionView }) {
                 {weight.flagged} reading{weight.flagged === 1 ? "" : "s"} to review
               </Badge>
             )}
-            {session.cbs_damage_pending.length > 0 && (
-              <Badge tone="gold" icon="alert">
-                {session.cbs_damage_pending.length} CBS damage to record
-              </Badge>
-            )}
             {showPledge && (
               <Badge tone={totals.is_estimate ? "gold" : "ok"} icon={totals.is_estimate ? "info" : "check"}>
-                {totals.is_estimate ? "Estimate" : "Measured"}
+                {totals.is_estimate ? "Provisional" : "Assayed"}
               </Badge>
+            )}
+            {!locked && (
+              <Button size="sm" variant="secondary" icon="plus" onClick={() => openDialog({ kind: "add-item" })}>
+                Add ornament
+              </Button>
             )}
           </div>
         }

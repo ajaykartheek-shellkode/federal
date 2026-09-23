@@ -10,31 +10,41 @@ from __future__ import annotations
 COLLATERAL_STEPS = [
     {"key": "receive", "label": "Receiving & securing photos"},
     {"key": "vision", "label": "Invoking Claude Vision (multimodal)"},
-    {"key": "detect", "label": "Detecting individual items"},
-    {"key": "count", "label": "Counting collateral items"},
-    {"key": "crossverify", "label": "Cross-verifying against CBS inventory"},
+    {"key": "detect", "label": "Detecting individual ornaments"},
+    {"key": "count", "label": "Counting collateral pieces"},
     {"key": "visibility", "label": "Checking visibility & overlap"},
     {"key": "foreign", "label": "Detecting foreign objects"},
     {"key": "background", "label": "Validating background clarity"},
-    {"key": "scale", "label": "Reading weighing-scale display"},
     {"key": "crop", "label": "Cropping item thumbnails"},
+    {"key": "inventory", "label": "Building the pledge inventory"},
     {"key": "result", "label": "Recording verification result"},
 ]
 
 COLLATERAL_MANUAL_STEPS = [
     {"key": "receive", "label": "Receiving & securing photos"},
-    {"key": "record", "label": "Recording assessor confirmation (AI off)"},
-    {"key": "result", "label": "Updating inventory"},
+    {"key": "record", "label": "Recording the capture (AI off)"},
+    {"key": "result", "label": "Saving the verification"},
+]
+
+SCALE_STEPS = [
+    {"key": "receive", "label": "Receiving the weighing-machine photo"},
+    {"key": "read", "label": "Reading the machine display"},
+    {"key": "reconcile", "label": "Reconciling with the entered weights"},
+    {"key": "result", "label": "Recording the total weight"},
+]
+
+SCALE_MANUAL_STEPS = [
+    {"key": "receive", "label": "Receiving the weighing-machine photo"},
+    {"key": "result", "label": "Recording the photo (AI off)"},
 ]
 
 WEIGHT_STEPS = [
     {"key": "connect", "label": "Connecting to CaratMeter"},
-    {"key": "measure", "label": "Measuring weight & purity (XRF)"},
+    {"key": "request", "label": "Requesting the assay for every ornament"},
     {"key": "grade", "label": "Grading purity against valuation table"},
-    {"key": "crosscheck", "label": "Cross-verifying with CBS declaration"},
-    {"key": "scale", "label": "Reconciling weighing-scale reading"},
+    {"key": "crosscheck", "label": "Cross-checking with the entered weights"},
     {"key": "valuation", "label": "Computing pledge amount"},
-    {"key": "result", "label": "Recording measurements"},
+    {"key": "result", "label": "Recording readings"},
 ]
 
 DAMAGE_STEPS = [

@@ -30,55 +30,6 @@ def img_result(index, status, items):
     )
 
 
-def test_ornament_kind_prefers_specific_names():
-    assert C.ornament_kind("Gold Earrings") == "earring"
-    assert C.ornament_kind("gold ring") == "ring"
-    assert C.ornament_kind("Gold Necklace") == "necklace"
-    assert C.ornament_kind("mangalsutra") == ""
-
-
-def test_match_items_rejects_wrong_kind_and_falls_back():
-    inventory = [{"id": "ring-1", "name": "Gold Ring"}, {"id": "earring-1", "name": "Gold Earrings"}]
-    result = CollateralResult(overall_status="pass", images=[img_result(0, "pass", [
-        DetectedItem(label="earring", matched_ornament_id="ring-1"),  # model mismatched the kind
-        DetectedItem(label="ring"),  # model gave no id
-        DetectedItem(label="ring", matched_ornament_id=""),  # model explicitly found no row
-    ])])
-    assert C.match_items(result, inventory) == 2
-    items = result.images[0].items
-    assert items[0].matched_ornament_id == "earring-1"
-    assert items[1].matched_ornament_id == "ring-1"
-    assert items[2].matched_ornament_id is None
-
-
-def test_match_items_uses_up_already_sighted_rows_first():
-    inventory = [{"id": "ring-1", "name": "Gold Ring"}, {"id": "ring-2", "name": "Gold Ring"}]
-    result = CollateralResult(overall_status="pass", images=[img_result(0, "pass", [
-        DetectedItem(label="ring", matched_ornament_id="ring-2"),
-        DetectedItem(label="ring", matched_ornament_id="ring-1"),
-    ])])
-    assert C.match_items(result, inventory, already_sighted=["ring-2"]) == 1
-    assert [i.matched_ornament_id for i in result.images[0].items] == ["ring-2", "ring-1"]
-
-
-def test_match_items_trusts_model_when_kind_absent_from_inventory():
-    inventory = [{"id": "necklace-1", "name": "Gold Necklace"}]
-    result = CollateralResult(overall_status="pass", images=[img_result(0, "pass", [
-        DetectedItem(label="gold chain", matched_ornament_id="necklace-1"),
-    ])])
-    assert C.match_items(result, inventory) == 1
-
-
-def test_match_items_skips_failed_images_and_unknown_ids():
-    inventory = [{"id": "chain-1", "name": "Gold Chain"}]
-    result = CollateralResult(overall_status="fail", images=[
-        img_result(0, "fail", [DetectedItem(label="chain", matched_ornament_id="chain-1")]),
-        img_result(1, "pass", [DetectedItem(label="bangle", matched_ornament_id="bangle-9")]),
-    ])
-    assert C.match_items(result, inventory) == 0
-    assert all(i.matched_ornament_id is None for im in result.images for i in im.items)
-
-
 def test_normalize_fills_missing_images_and_applies_threshold():
     result = CollateralResult(overall_status="pass", images=[
         img_result(0, "pass", []).model_copy(update={"foreign_object_percent": 30}),
@@ -91,18 +42,36 @@ def test_normalize_fills_missing_images_and_applies_threshold():
     assert out.overall_status == "fail"
 
 
-def test_crop_matched_creates_thumbnails(monkeypatch):
+def test_crop_detections_thumbnails_every_ornament(monkeypatch):
     from tests.conftest import png_bytes
 
     saved = []
-    monkeypatch.setattr(C.store, "save_asset", lambda data, ct: saved.append((len(data), ct)) or "thumb1")
-    result = CollateralResult(overall_status="pass", images=[img_result(0, "pass", [
-        DetectedItem(label="ring", box=BoundingBox(x=0.1, y=0.1, w=0.5, h=0.5), matched_ornament_id="ring-1"),
-        DetectedItem(label="chain", box=BoundingBox(x=0.1, y=0.1, w=0.5, h=0.5), matched_ornament_id=None),
-    ])])
-    assert C.crop_matched(result, [Asset(png_bytes((200, 200)), "p.png", "image/png")]) == 1
-    assert result.images[0].items[0].thumb_asset_id == "thumb1"
+    monkeypatch.setattr(C.store, "save_asset", lambda data, ct: saved.append((len(data), ct)) or f"thumb{len(saved)}")
+    box = BoundingBox(x=0.1, y=0.1, w=0.5, h=0.5)
+    result = CollateralResult(overall_status="pass", images=[
+        img_result(0, "pass", [DetectedItem(label="Gold Ring", box=box), DetectedItem(label="Gold Chain", box=box)]),
+        img_result(1, "fail", [DetectedItem(label="Gold Bangle", box=box)]),  # unusable photo: nothing to inventory
+    ])
+    images = [Asset(png_bytes((200, 200)), "p.png", "image/png"), Asset(png_bytes((200, 200)), "q.png", "image/png")]
+    assert C.crop_detections(result, images) == 2
+    assert [i.thumb_asset_id for i in result.images[0].items] == ["thumb1", "thumb2"]
+    assert result.images[1].items[0].thumb_asset_id is None
     assert saved and saved[0][1] == "image/png"
+
+
+def test_scale_agent_keeps_only_plausible_readings():
+    from app.agents import scale as SC
+    from app.schemas import ScaleResult
+
+    good = SC._normalize(ScaleResult(status="pass", reading_visible=True, weight_g=90.0249, reading_text="  90.02   g "))
+    assert (good.weight_g, good.reading_text) == (90.025, "90.02 g")
+    for bad in (
+        ScaleResult(status="pass", reading_visible=True, weight_g=float("nan")),
+        ScaleResult(status="pass", reading_visible=True, weight_g=-4, reading_text="-4 g"),
+        ScaleResult(status="pass", reading_visible=False, weight_g=12.0, reading_text="12 g"),
+    ):
+        out = SC._normalize(bad)
+        assert (out.reading_visible, out.weight_g, out.reading_text) == (False, None, "")
 
 
 def _doc(no, status="pass", **kw):
@@ -165,33 +134,41 @@ def test_imageprep_keeps_original_format_on_decode_failure():
     assert (data, fmt) == (b"not an image", "png")
 
 
-def test_normalize_keeps_only_plausible_scale_readings():
-    good = img_result(0, "pass", []).model_copy(update={"scale_reading_visible": True, "scale_weight_g": 90.0249, "scale_reading_text": "  90.02   g "})
-    nan = img_result(1, "pass", []).model_copy(update={"scale_reading_visible": True, "scale_weight_g": float("nan"), "scale_reading_text": "--"})
-    hidden = img_result(2, "pass", []).model_copy(update={"scale_reading_visible": False, "scale_weight_g": 12.0})
-    failed = img_result(3, "fail", []).model_copy(update={"scale_reading_visible": True, "scale_weight_g": 50.0})
-    out = C._normalize(CollateralResult(overall_status="pass", images=[good, nan, hidden, failed]), 4, {}, foreign_pct=10)
-    assert (out.images[0].scale_weight_g, out.images[0].scale_reading_text) == (90.025, "90.02 g")
-    for img in out.images[1:]:
-        assert (img.scale_reading_visible, img.scale_weight_g, img.scale_reading_text) == (False, None, "")
+def test_journey_drafts_are_fact_exact():
+    listed = conversation.draft("collateral", {"ai_enabled": True, "total": 3, "names": ["Gold Chain", "Gold Bangle", "Silver Anklet"]})
+    assert "3 ornaments" in listed and "Gold Chain, Gold Bangle, Silver Anklet" in listed
+    assert "enter each item's weight" in listed
 
+    empty = conversation.draft("collateral", {"ai_enabled": True, "total": 0, "names": []})
+    assert "couldn't make out any ornaments" in empty
+    assert "to the list yourself" in conversation.draft("collateral", {"ai_enabled": False})
 
-def test_weight_drafts_name_the_findings_and_pledge():
-    flagged = conversation.draft("weight", {"total": 6, "measured_g": 67.37, "flagged": ["Gold Pendant"], "scale_g": 68.1,
-                                            "scale_differs": True, "scale_diff_g": 0.73, "scale_basis": "CaratMeter",
-                                            "pledge_amount": 410303, "blocker": True})
-    assert "Gold Pendant" in flagged and "0.73 g" in flagged and "₹4,10,303" in flagged and "justification" in flagged
-    clean = conversation.draft("weight", {"total": 8, "measured_g": 89.98, "flagged": [], "pledge_amount": 554539,
-                                          "cbs_damaged": ["Gold Bangle", "Gold Ring"]})
-    assert "89.98 g" in clean and "₹5,54,539" in clean and "photograph them" in clean
+    machine = conversation.draft("scale", {"ai_enabled": True, "scale_g": 33.05, "entered_g": 31.5, "differs": True, "diff_g": 1.55})
+    assert "33.05 g" in machine and "31.50 g" in machine and "1.55 g" in machine
+
+    unread = conversation.draft("scale", {"ai_enabled": True, "scale_g": None, "first_issue": "Display not readable"})
+    assert "Enter the total" in unread and "Display not readable" in unread
+
+    flagged = conversation.draft("weight", {"total": 6, "measured": 6, "flagged": ["Gold Pendant"], "grades": ["22K"],
+                                            "pledge_amount": 410303, "blocker": True, "scale_missing": True})
+    assert "Gold Pendant" in flagged and "₹4,10,303" in flagged and "justification" in flagged
+    assert "No weighing-machine total" in flagged
+
+    clean = conversation.draft("weight", {"total": 8, "measured": 8, "flagged": [], "grades": ["22K", "18K"], "pledge_amount": 554539})
+    assert "22K, 18K" in clean and "₹5,54,539" in clean
+
+    damage = conversation.draft("damage", {"ai_enabled": True, "recorded": ["Gold Bangle"], "needs_review": 0,
+                                           "deduction": 8, "next_label": "pledge valuation"})
+    assert "<strong>8%</strong> damage deduction" in damage and "pledge valuation" in damage
     assert conversation._inr(1234567) == "₹12,34,567" and conversation._inr(999) == "₹999"
 
 
-def test_guidance_drafts_are_fact_exact():
-    msg = conversation.draft("collateral", {"ai_enabled": True, "advanced": False, "verified": 6, "total": 8,
-                                            "pending": ["Gold Ring", "Gold Chain"], "blocker": True})
-    assert "6/8" in msg and "Gold Ring, Gold Chain" in msg and "blocker mode" in msg
+def test_guidance_drafts_carry_the_next_action():
+    welcome = conversation.draft("welcome", {"customer": "Rajesh Kumar", "scenario": "Fresh Loan", "branch": "FED-MUM-001", "ai_enabled": True})
+    assert "Rajesh Kumar" in welcome and "up to 3 photos" in welcome
     assert "REVIEW" in conversation.draft("report", {"report_id": "GLV-1", "recommendation": "REVIEW", "warnings": 2})
+    assert "weighing-machine photo" in conversation.draft("continue", {"to": "weight"})
+    assert "pledge valuation" in conversation.draft("continue", {"to": "valuation"})
 
 
 def test_guidance_skips_model_when_ai_off(fake_bedrock):

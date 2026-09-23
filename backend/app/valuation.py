@@ -1,11 +1,12 @@
 """Pledge valuation — pure functions, driven entirely by the configured valuation table.
 
 For each ornament:
-    weight basis   = measured CaratMeter weight (declared CBS weight until measured → estimate)
-    purity grade   = grade assessed from the measured fineness (declared grade until measured)
+    weight         = the weight the assessor entered for that item (cross-checked against the
+                     weighing machine and the CaratMeter)
+    purity grade   = the grade assessed from the CaratMeter fineness; unpriced until measured
     gross value    = weight × rate per gram of that material + grade
     eligible       = gross value × LTV % of the material
-    damage         = eligible × CBS damage % deduction (mode: "tenths" | "percent" | "none")
+    damage         = eligible × damage % deduction (mode: "tenths" | "percent" | "none")
     pledge amount  = eligible − damage
 
 Nothing here is hard-coded per material: materials, grades, rates and LTV all come from
@@ -72,13 +73,13 @@ def damage_retained(damage_percent: float, mode: str) -> float:
 
 
 def value_item(item: dict, valuation: dict) -> dict:
+    """Value one ornament: entered weight at the rate for its assessed purity."""
     material = material_config(valuation, item.get("material", "gold"))
     measured = item.get("measurement")
-    if measured:
-        weight = float(measured["weight_g"])
-        grade = grade_by_name(material, measured.get("grade"))
-    else:
-        weight = float(item.get("weight_gm") or 0)
+    weight = float(item.get("weight_gm") or 0)
+    # Purity comes from the CaratMeter; a correction by the assessor is honoured when it is graded.
+    grade = grade_by_name(material, measured.get("grade")) if measured else None
+    if grade is None:
         grade = declared_grade(material, item.get("carat", ""))
 
     rate = float(grade["rate_per_gram"]) if grade else 0.0
@@ -93,7 +94,8 @@ def value_item(item: dict, valuation: dict) -> dict:
         "material": (material or {}).get("name", item.get("material", "")),
         "grade": grade["grade"] if grade else None,
         "weight_g": round(weight, 3),
-        "weight_basis": "measured" if measured else "declared",
+        "weight_basis": "entered",
+        "measured": bool(measured),
         "rate_per_gram": rate,
         "gross_value": round(gross),
         "ltv_pct": ltv,
@@ -106,6 +108,7 @@ def value_item(item: dict, valuation: dict) -> dict:
 
 def value_inventory(inventory: List[dict], valuation: dict) -> Dict:
     items = [value_item(i, valuation) for i in inventory]
+    # Without a CaratMeter reading for every item the total is provisional.
     measured = bool(inventory) and all(i.get("measurement") for i in inventory)
     return {
         "items": items,

@@ -12,9 +12,10 @@ const signed = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2, signDi
 /** "+0.02 g" / "−0.62 g" / "0 g" */
 export const formatWeightDelta = (grams: number) => `${signed.format(Math.round((grams || 0) * 1000) / 1000).replace("-", "−")} g`;
 
-/** Declared purity as people read it: gold "22" → "22K"; silver "925" stays "925". */
+/** Purity as people read it: gold "22" → "22K"; silver "925" stays "925"; unknown → "—". */
 export function purityLabel(item: Pick<InventoryItem, "carat" | "material">): string {
   const carat = String(item.carat ?? "");
+  if (!carat) return "—";
   return (item.material ?? "gold") === "gold" && /^\d+(\.\d+)?$/.test(carat) ? `${carat}K` : carat;
 }
 
@@ -52,25 +53,23 @@ export const RESULT_META: Record<ResultStatus, { label: string; tone: Tone }> = 
 };
 
 export const ITEM_META: Record<ItemStatus, { label: string; tone: Tone; hint: string }> = {
-  pending: { label: "Not sighted", tone: "warn", hint: "Not yet matched in a collateral photo" },
-  verified: { label: "Verified", tone: "ok", hint: "Sighted and cross-verified by the AI agent" },
-  overridden: { label: "Overridden", tone: "brand", hint: "Confirmed by the assessor with justification" },
-  manual: { label: "Confirmed", tone: "neutral", hint: "Confirmed by the assessor (AI validation off)" },
+  detected: { label: "From photo", tone: "ok", hint: "Listed from the collateral photo by the agent" },
+  manual: { label: "Added", tone: "brand", hint: "Added to the list by the assessor" },
 };
 
 export const MEASURE_META: Record<MeasurementStatus, { label: string; tone: Tone; hint: string }> = {
-  pending: { label: "Not measured", tone: "neutral", hint: "Fetch readings from the CaratMeter" },
-  match: { label: "Match", tone: "ok", hint: "Weight and purity agree with CBS within tolerance" },
-  weight_mismatch: { label: "Weight differs", tone: "warn", hint: "Measured weight is outside the tolerance of the CBS weight" },
-  purity_low: { label: "Lower purity", tone: "warn", hint: "Assessed purity grade is below the CBS declaration" },
-  mismatch: { label: "Weight & purity differ", tone: "warn", hint: "Both weight and purity differ from CBS" },
-  missing: { label: "No reading", tone: "bad", hint: "The CaratMeter returned no usable reading for this item" },
+  pending: { label: "Not assayed", tone: "neutral", hint: "Fetch the readings from the CaratMeter" },
+  match: { label: "Assayed", tone: "ok", hint: "Purity graded, and the device weight agrees with the weight entered" },
+  weight_mismatch: { label: "Weight differs", tone: "warn", hint: "The device weight is outside tolerance of the weight entered" },
+  ungraded: { label: "Below grades", tone: "warn", hint: "The assayed purity is below every grade configured for this material" },
+  mismatch: { label: "Weight & purity", tone: "warn", hint: "The device weight differs and the purity is below every grade" },
+  missing: { label: "No reading", tone: "bad", hint: "The CaratMeter returned no usable reading for this ornament" },
 };
 
 export const DAMAGE_DEDUCTION_META: Record<DamageDeduction, { label: string; hint: string }> = {
-  tenths: { label: "Tenths of a percent", hint: "CBS damage 10 → 1% deduction" },
-  percent: { label: "Direct percentage", hint: "CBS damage 10 → 10% deduction" },
-  none: { label: "No deduction", hint: "CBS damage is recorded but not deducted" },
+  tenths: { label: "Tenths of a percent", hint: "damage 10 → 1% deduction" },
+  percent: { label: "Direct percentage", hint: "damage 10 → 10% deduction" },
+  none: { label: "No deduction", hint: "damage is recorded but not deducted" },
 };
 
 export const WORKFLOW_STEPS: { key: WorkflowState; label: string; short: string }[] = [
@@ -84,7 +83,8 @@ export const WORKFLOW_STEPS: { key: WorkflowState; label: string; short: string 
 
 export const AGENT_LABEL: Record<string, string> = {
   collateral: "Collateral Validator",
-  weight: "CaratMeter · Weight & Purity",
+  scale: "Weighing Machine",
+  weight: "CaratMeter · Purity",
   damage: "Damage Detector",
   document: "Document Verifier",
   report: "Report Generator",

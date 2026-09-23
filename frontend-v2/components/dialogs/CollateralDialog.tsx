@@ -12,9 +12,9 @@ import { DropZone, FileChip, validateFile } from "./FilePick";
 
 const MAX_PHOTOS = 3;
 const TIPS = [
-  "Place all pledged ornaments together on the weighing scale",
-  "Keep the scale display readable in the photo — no glare or shadow",
-  "Keep every item fully inside the frame — nothing cropped or overlapping",
+  "Lay every pledged ornament out on a plain, uncluttered surface",
+  "Keep the pieces apart — each one you can see becomes a line on the pledge list",
+  "Keep every item fully inside the frame, nothing cropped or overlapping",
   "No hands, packaging, documents or other objects in the photo",
   "Use more than one photo if the set is large (up to 3 per upload)",
 ];
@@ -24,7 +24,7 @@ export default function CollateralDialog({ open, onClose }: { open: boolean; onC
   const [files, setFiles] = useState<File[]>([]);
   const [error, setError] = useState("");
 
-  const pending = session?.inventory.filter((r) => r.status === "pending").length ?? 0;
+  const listed = session?.inventory.length ?? 0;
   const busy = !!state.busy;
 
   const add = (incoming: File[]) => {
@@ -57,7 +57,9 @@ export default function CollateralDialog({ open, onClose }: { open: boolean; onC
       title="Collateral photos"
       subtitle={
         session
-          ? `${plural(pending, "item")} still to be sighted · ${session.loan.customer_name}`
+          ? listed
+            ? `${plural(listed, "ornament")} listed so far · ${session.loan.customer_name}`
+            : `The ornaments in this photo become the pledge list · ${session.loan.customer_name}`
           : undefined
       }
       footer={
@@ -78,7 +80,7 @@ export default function CollateralDialog({ open, onClose }: { open: boolean; onC
             multiple
             onFiles={add}
             disabled={files.length >= MAX_PHOTOS}
-            title={files.length >= MAX_PHOTOS ? "Maximum photos selected" : "Drop photos here"}
+            title={files.length >= MAX_PHOTOS ? "Maximum photos selected" : "Drop the collateral photos here"}
             hint="JPEG, PNG or WebP · up to 15 MB each"
             cameraLabel="Capture"
           />

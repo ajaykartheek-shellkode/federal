@@ -8,8 +8,8 @@ import Button from "@/components/ui/Button";
 import Dialog from "@/components/ui/Dialog";
 import { FieldError, Input, Label, Select } from "@/components/ui/Field";
 import Icon from "@/components/ui/Icon";
-import { cn } from "@/lib/format";
-import type { InventoryItem, SessionView, Severity } from "@/lib/types";
+import { cn, DAMAGE_DEDUCTION_META, purityLabel } from "@/lib/format";
+import type { DamageEntry, InventoryItem, SessionView, Severity } from "@/lib/types";
 import { DropZone, FileChip, validateFile } from "./FilePick";
 
 interface Row {
@@ -17,9 +17,9 @@ interface Row {
   ornamentId: string;
   type: string;
   severity: Severity;
+  damagePercent: string;
   details: string;
   file: File | null;
-  fromCbs: boolean;
 }
 
 const guessType = (text: string) => {
@@ -33,29 +33,27 @@ const guessType = (text: string) => {
   return "Other";
 };
 
-const guessSeverity = (item: InventoryItem): Severity =>
-  /light|minor|small|slight/i.test(item.cbs_damage_details) ? "minor" : item.damage_percent >= 10 ? "severe" : "moderate";
+/** A damage percentage the branch would typically apply for this severity, as a starting point. */
+const SEVERITY_PERCENT: Record<Severity, string> = { minor: "4", moderate: "8", severe: "15" };
 
 let rowSeq = 0;
-function rowFor(item: InventoryItem | undefined, fromCbs: boolean): Row {
+function rowFor(item?: InventoryItem, existing?: DamageEntry): Row {
+  const severity = existing?.severity ?? "moderate";
   return {
     key: `row-${rowSeq++}`,
     ornamentId: item?.id ?? "",
-    type: item && fromCbs ? guessType(item.cbs_damage_details) : "Dent",
-    severity: item && fromCbs ? guessSeverity(item) : "moderate",
-    details: item && fromCbs ? item.cbs_damage_details : "",
+    type: existing?.type ?? (existing?.assessor_details ? guessType(existing.assessor_details) : "Dent"),
+    severity,
+    damagePercent: existing?.damage_percent ? String(existing.damage_percent) : SEVERITY_PERCENT[severity],
+    details: existing?.assessor_details ?? "",
     file: null,
-    fromCbs,
   };
 }
 
 function initialRows(session: SessionView, ornamentId?: string): Row[] {
-  if (ornamentId) {
-    const item = session.inventory.find((i) => i.id === ornamentId);
-    return [rowFor(item, !!item?.cbs_damage)];
-  }
-  const pending = session.inventory.filter((i) => session.cbs_damage_pending.includes(i.id));
-  return pending.length ? pending.map((i) => rowFor(i, true)) : [rowFor(undefined, false)];
+  const item = ornamentId ? session.inventory.find((i) => i.id === ornamentId) : undefined;
+  const existing = item ? session.damages.find((d) => d.ornament_id === item.id) : undefined;
+  return [rowFor(item, existing)];
 }
 
 export default function DamageDialog({ open, ornamentId, onClose }: { open: boolean; ornamentId?: string; onClose: () => void }) {
@@ -84,6 +82,8 @@ export default function DamageDialog({ open, ornamentId, onClose }: { open: bool
     if (!r.ornamentId) return "Choose the damaged ornament.";
     if (!r.file) return "Attach a close-up photo of the damage.";
     if (r.type === "Other" && !r.details.trim()) return "Describe the damage.";
+    const pct = Number(r.damagePercent);
+    if (!(r.damagePercent.trim() !== "" && pct >= 0 && pct <= 100)) return "Enter a damage percentage between 0 and 100.";
     return "";
   });
   const valid = rows.length > 0 && problems.every((p) => !p);
@@ -95,6 +95,7 @@ export default function DamageDialog({ open, ornamentId, onClose }: { open: bool
       ornament_id: r.ornamentId,
       type: r.type,
       severity: r.severity,
+      damage_percent: Number(r.damagePercent),
       details: r.details.trim(),
       file: r.file as File,
     }));
@@ -109,7 +110,7 @@ export default function DamageDialog({ open, ornamentId, onClose }: { open: bool
       size="lg"
       icon="alert"
       title="Record damaged ornaments"
-      subtitle="One close-up photo per damaged item. CBS-declared damage is pre-filled — adjust if needed."
+      subtitle="One close-up photo per damaged item, with the damage percentage that reduces its pledge amount."
       footer={
         <>
           <span className="mr-auto text-xs text-ink-muted">
@@ -141,7 +142,6 @@ export default function DamageDialog({ open, ornamentId, onClose }: { open: bool
                 <div className="flex items-center justify-between border-b border-line bg-subtle px-4 py-2">
                   <span className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-brand-700">
                     Item {idx + 1}
-                    {r.fromCbs && <Badge tone="gold">Declared in CBS</Badge>}
                     {item && recorded.has(item.id) && <Badge tone="neutral">Replaces earlier record</Badge>}
                   </span>
                   {rows.length > 1 && (
@@ -161,7 +161,7 @@ export default function DamageDialog({ open, ornamentId, onClose }: { open: bool
                       </option>
                       {inventory.map((o) => (
                         <option key={o.id} value={o.id} disabled={chosenElsewhere.has(o.id)}>
-                          {o.name} · {o.carat}K · {o.weight_gm} g{o.cbs_damage ? " · CBS damage" : ""}
+                          {o.name} · {purityLabel(o)} · {o.weight_gm > 0 ? `${o.weight_gm} g` : "not weighed"}
                         </option>
                       ))}
                     </Select>
@@ -185,7 +185,7 @@ export default function DamageDialog({ open, ornamentId, onClose }: { open: bool
                         <button
                           key={s}
                           type="button"
-                          onClick={() => update(r.key, { severity: s })}
+                          onClick={() => update(r.key, { severity: s, damagePercent: SEVERITY_PERCENT[s] })}
                           className={cn(
                             "h-10 rounded-xl border text-xs font-semibold capitalize transition-colors",
                             r.severity === s ? "border-brand-500 bg-brand-50 text-brand-700 shadow-focus" : "border-line-strong text-ink-2 hover:border-brand-300"
@@ -197,6 +197,25 @@ export default function DamageDialog({ open, ornamentId, onClose }: { open: bool
                     </div>
                   </div>
                   <div>
+                    <Label htmlFor={`${r.key}-pct`} required hint={DAMAGE_DEDUCTION_META[options.damage_deduction].hint}>
+                      Damage percentage
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id={`${r.key}-pct`}
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={r.damagePercent}
+                        onChange={(e) => update(r.key, { damagePercent: e.target.value })}
+                        className="pr-8 tabular-nums"
+                      />
+                      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-ink-muted">%</span>
+                    </div>
+                  </div>
+                  <div className="md:col-span-2">
                     <Label htmlFor={`${r.key}-details`} hint={r.type === "Other" ? "required" : "optional"}>
                       Description
                     </Label>
@@ -239,7 +258,7 @@ export default function DamageDialog({ open, ornamentId, onClose }: { open: bool
         <button
           type="button"
           disabled={rows.length >= Math.min(10, inventory.length)}
-          onClick={() => setRows((rs) => [...rs, rowFor(undefined, false)])}
+          onClick={() => setRows((rs) => [...rs, rowFor()])}
           className="flex w-full items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-line-strong py-2.5 text-sm font-semibold text-brand-600 transition-colors hover:border-brand-300 hover:bg-brand-50 disabled:opacity-40"
         >
           <Icon name="plus" size={16} /> Add another damaged item

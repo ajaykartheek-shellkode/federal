@@ -13,7 +13,8 @@ const TARGET: Record<AuditTarget, { label: string; tone: "brand" | "gold" | "neu
   document: { label: "Document accepted", tone: "gold" },
   edit: { label: "Correction", tone: "neutral" },
   measurement: { label: "Reading accepted", tone: "gold" },
-  scale: { label: "Scale reading", tone: "neutral" },
+  scale: { label: "Machine total", tone: "neutral" },
+  weight: { label: "Weight recorded", tone: "neutral" },
 };
 
 export default function AuditTrail({ session }: { session: SessionView }) {
@@ -25,14 +26,25 @@ export default function AuditTrail({ session }: { session: SessionView }) {
         {[...session.audit].reverse().map((a, i) => (
           <motion.li key={a.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.03 }} className="flex gap-3">
             <span className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
-              <Icon name={a.target === "edit" ? "pen" : a.target === "scale" ? "weighScale" : "shieldCheck"} size={14} />
+              <Icon
+                name={
+                  a.target === "edit" ? "pen" : a.target === "scale" || a.target === "weight" ? "weighScale" : "shieldCheck"
+                }
+                size={14}
+              />
             </span>
             <div className="min-w-0 flex-1 rounded-xl border border-line bg-subtle px-3 py-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="flex items-center gap-2 text-sm font-semibold text-ink">
                   {a.item}{" "}
-                  <Badge tone={TARGET[a.target].tone}>
-                    {a.target === "scale" && a.new_value === "accepted by assessor" ? "Difference accepted" : TARGET[a.target].label}
+                  <Badge tone={TARGET[a.target]?.tone ?? "neutral"}>
+                    {a.new_value === "accepted by assessor" && a.target === "scale"
+                      ? "Difference accepted"
+                      : a.new_value === "added by assessor"
+                        ? "Ornament added"
+                        : a.new_value === "removed by assessor"
+                          ? "Ornament removed"
+                          : (TARGET[a.target]?.label ?? "Change")}
                   </Badge>
                 </span>
                 <span className="text-2xs text-ink-faint">{formatDateTime(a.ts)}</span>

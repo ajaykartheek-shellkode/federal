@@ -93,6 +93,7 @@ export const overrideFinding = (sessionId: string, target: OverrideTarget, ref: 
 
 export interface ItemChanges {
   name?: string;
+  material?: string;
   carat?: string;
   weight_gm?: number;
   quantity?: number;
@@ -104,10 +105,29 @@ export const editItem = (sessionId: string, ref: string, changes: ItemChanges, j
 export const enterScaleReading = (sessionId: string, weightG: number, justification: string) =>
   request<{ session: SessionView }>("/api/chat/scale", json("POST", { session_id: sessionId, weight_g: weightG, justification }));
 
+/** The weight the assessor read off the machine for one ornament. */
+export const setItemWeight = (sessionId: string, ref: string, weightGm: number, justification = "") =>
+  request<{ session: SessionView }>("/api/chat/weight", json("POST", { session_id: sessionId, ref, weight_gm: weightGm, justification }));
+
+export interface NewItem {
+  name: string;
+  material?: string;
+  quantity?: number;
+  weight_gm?: number;
+}
+
+/** Add an ornament the collateral photo did not show (or the agent missed). */
+export const addInventoryItem = (sessionId: string, item: NewItem) =>
+  request<{ session: SessionView }>("/api/chat/item", json("POST", { session_id: sessionId, ...item }));
+
+export const removeInventoryItem = (sessionId: string, ref: string, justification = "") =>
+  request<{ session: SessionView }>("/api/chat/item/remove", json("POST", { session_id: sessionId, ref, justification }));
+
 export interface DamageInput {
   ornament_id: string;
   type: string;
   severity: string;
+  damage_percent: number;
   details: string;
   file: File;
 }
@@ -119,6 +139,7 @@ export interface DocumentInput {
 
 export interface StepPayload {
   collateral?: File[];
+  scale?: File;
   damage?: DamageInput[];
   documents?: DocumentInput[];
 }
@@ -128,10 +149,19 @@ export function buildStepForm(sessionId: string, action: StepAction, payload: St
   form.append("session_id", sessionId);
   form.append("action", action);
   (payload.collateral ?? []).forEach((f) => form.append("collateral_images", f, f.name));
+  if (payload.scale) form.append("scale_image", payload.scale, payload.scale.name);
   const damage = payload.damage ?? [];
   form.append(
     "damage_hints",
-    JSON.stringify(damage.map(({ ornament_id, type, severity, details }) => ({ ornament_id, type, severity, details })))
+    JSON.stringify(
+      damage.map(({ ornament_id, type, severity, damage_percent, details }) => ({
+        ornament_id,
+        type,
+        severity,
+        damage_percent,
+        details,
+      }))
+    )
   );
   damage.forEach((d) => form.append("damage_images", d.file, d.file.name));
   const docs = payload.documents ?? [];

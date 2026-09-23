@@ -1,4 +1,9 @@
-"""End-to-end API tests against the test database with Bedrock faked."""
+"""End-to-end API tests against the test database with Bedrock faked.
+
+The journey: collateral photo → inventory, weights typed per item, weighing-machine photo,
+one CaratMeter request per application, damage with a percentage, pledge valuation, documents,
+report.
+"""
 
 from __future__ import annotations
 
@@ -6,10 +11,9 @@ import json
 
 from tests.conftest import png_bytes
 
-RAJESH = "GL2024001234"  # Fresh Loan (AI on), 8 items (90 g declared), 2 CBS-declared damages
+RAJESH = "GL2024001234"  # Fresh Loan (AI on)
 PRIYA = "GL2024001189"   # Renewal (AI off by default)
-SURESH = "GL2024001098"  # Fresh Loan; the mock CaratMeter reads a lighter pendant and a low-purity bangle
-LAKSHMI = "GL2024001210" # Fresh Loan; gold + silver
+SURESH = "GL2024001098"  # Fresh Loan; the mock CaratMeter reads item-2 lighter than entered
 
 
 def parse_sse(text: str):
@@ -46,22 +50,32 @@ def photo(name="set.png", size=(320, 240)):
     return (name, png_bytes(size), "image/png")
 
 
+def weigh(client, sid, weights):
+    """Enter the weight of each ornament, as the assessor does at the counter."""
+    session = None
+    for ref, grams in weights.items():
+        res = client.post("/api/chat/weight", json={"session_id": sid, "ref": ref, "weight_gm": grams})
+        assert res.status_code == 200, res.text
+        session = res.json()["session"]
+    return session
+
+
 def test_start_validates_account(client):
     assert client.post("/api/chat/start", json={"account": "  "}).status_code == 400
     res = client.post("/api/chat/start", json={"account": "NOPE123"})
     assert res.status_code == 404 and res.json()["samples"]
     session = start(client, " gl2024001234 ")
     assert session["loan"]["account_number"] == RAJESH
-    assert session["ai_enabled"] is True and len(session["inventory"]) == 8
+    assert session["ai_enabled"] is True
+    assert session["inventory"] == []  # CBS supplies the customer, never the ornaments
+    assert session["steps"] == ["collateral", "weight", "damage", "valuation", "document", "report"]
     assert "id_number" not in session["loan"]
 
 
 def test_full_happy_path_with_reports(client, fake_bedrock):
-    fake_bedrock.scale_weight_g = 90.02
+    fake_bedrock.scale_weight_g = 33.02
     s = start(client)
     sid = s["session_id"]
-    assert s["steps"] == ["collateral", "weight", "damage", "valuation", "document", "report"]
-    assert s["stats"]["pledge_is_estimate"] is True and s["stats"]["pledge_amount"] > 0
 
     # Actions out of order are refused with the current view.
     res, _, _ = step(client, sid, "report")
@@ -71,100 +85,167 @@ def test_full_happy_path_with_reports(client, fake_bedrock):
     names = [e for e, _ in events]
     assert names[0] == "exec-step" and "exec-done" in names and names[-1] == "done"
     steps_done = [d for e, d in events if e == "exec-step" and d["status"] == "done"]
-    assert len(steps_done) == 11 and all("elapsed_ms" in d for d in steps_done)
-    assert all(r["status"] == "verified" and r["thumb_asset_id"] for r in s["inventory"])
+    assert len(steps_done) == 10 and all("elapsed_ms" in d for d in steps_done)
+    assert [r["id"] for r in s["inventory"]] == ["item-1", "item-2", "item-3"]
+    assert [r["name"] for r in s["inventory"]] == ["Gold Chain", "Gold Bangle", "Gold Ring"]
+    assert all(r["thumb_asset_id"] and r["weight_gm"] == 0 and r["carat"] == "" for r in s["inventory"])
     assert s["workflow_state"] == "weight"
-    assert s["scale"]["weight_g"] == 90.02 and s["weight"]["scale_status"] == "match"
-    assert set(s["cbs_damage_pending"]) == {"bangle-1", "ring-3"}
-
-    res, events, s = step(client, sid, "measure")
-    run = [d for e, d in events if e == "exec-step" and d["status"] == "done"]
-    assert [d["key"] for d in run] == ["connect", "measure", "grade", "crosscheck", "scale", "valuation", "result"]
-    done = next(d for e, d in events if e == "exec-done")
-    assert done["agent"] == "weight" and done["status"] == "pass"
-    assert all(r["measurement_status"] == "match" for r in s["inventory"])
-    assert s["workflow_state"] == "damage"
-    assert s["stats"]["pledge_is_estimate"] is False and s["valuation"]["totals"]["pledge_amount"] == s["stats"]["pledge_amount"]
-    assert s["measurements"]["device"]["device_id"] == "CM-FED-MUM-001"
 
     thumb = s["inventory"][0]["thumb_asset_id"]
     asset = client.get(f"/api/assets/{thumb}")
     assert asset.status_code == 200 and asset.headers["content-type"] == "image/png"
 
-    hints = [
-        {"ornament_id": "bangle-1", "type": "Dent", "severity": "moderate", "details": "Dent on inner rim"},
-        {"ornament_id": "ring-3", "type": "Scratch", "severity": "minor", "details": ""},
-    ]
-    res, events, s = step(client, sid, "damage", files=[("damage_images", photo("d1.png")), ("damage_images", photo("d2.png"))],
-                          damage_hints=json.dumps(hints))
-    assert len(s["damages"]) == 2 and s["cbs_damage_pending"] == []
-    assert s["damages"][0]["thumb_asset_id"] and s["damages"][0]["assessed_severity"] == "minor"
-    assert s["workflow_state"] == "damage"
+    # The CaratMeter is only asked once every ornament has a weight.
+    res, _, _ = step(client, sid, "measure")
+    assert res.status_code == 200
+    _, events, s = step(client, sid, "measure")
+    assert any(e == "notice" and "Enter the weight" in d["text"] for e, d in events)
 
-    res, events, s = step(client, sid, "continue")
-    assert s["workflow_state"] == "valuation"  # review the pledge amount after damage
-    assert s["valuation"]["totals"]["pledge_amount"] > 0
+    s = weigh(client, sid, {"item-1": 10, "item-2": 11, "item-3": 12})
+    assert s["weight"]["entered_g"] == 33 and s["weight"]["unweighed"] == []
+    assert s["stats"]["weighed"] == 3
+
+    _, events, s = step(client, sid, "scale_photo", files=[("scale_image", photo("scale.png"))])
+    assert [d["key"] for e, d in events if e == "exec-step" and d["status"] == "done"] == [
+        "receive", "read", "reconcile", "result",
+    ]
+    assert s["scale"]["weight_g"] == 33.02 and s["weight"]["scale_status"] == "match"
+
+    _, events, s = step(client, sid, "measure")
+    run = [d["key"] for e, d in events if e == "exec-step" and d["status"] == "done"]
+    assert run == ["connect", "request", "grade", "crosscheck", "valuation", "result"]
+    assert all(r["measurement"] and r["carat"] for r in s["inventory"])
+    assert s["measurements"]["device"]["device_id"] == "CM-FED-MUM-001"
+    assert s["workflow_state"] == "damage"
+    assert s["stats"]["pledge_is_estimate"] is False and s["stats"]["pledge_amount"] > 0
+
+    hints = [{"ornament_id": "item-2", "type": "Dent", "severity": "moderate", "damage_percent": 8, "details": "Dent on rim"}]
+    _, _, s = step(client, sid, "damage", files=[("damage_images", photo("d1.png"))], damage_hints=json.dumps(hints))
+    assert len(s["damages"]) == 1 and s["damages"][0]["damage_percent"] == 8
+    assert next(r for r in s["inventory"] if r["id"] == "item-2")["damage_percent"] == 8
+
+    _, events, s = step(client, sid, "continue")
+    assert s["workflow_state"] == "valuation" and s["valuation"]["totals"]["pledge_amount"] > 0
     assert any(e == "agent-msg" for e, _ in events)
 
-    res, events, s = step(client, sid, "continue")
+    _, _, s = step(client, sid, "continue")
     assert s["workflow_state"] == "document"
 
-    res, events, s = step(client, sid, "document", files=[("documents", photo("aadhaar.png"))],
-                          document_types=json.dumps(["Aadhaar Card"]))
+    _, _, s = step(client, sid, "document", files=[("documents", photo("aadhaar.png"))],
+                   document_types=json.dumps(["Aadhaar Card"]))
     assert s["workflow_state"] == "report"
     assert s["documents"]["items"][0]["status"] == "pass"
 
-    res, events, s = step(client, sid, "report")
+    _, _, s = step(client, sid, "report")
     assert s["workflow_state"] == "done"
     assert s["report"]["recommendation"] == "PROCEED", s["report"]["reasons"]
     assert s["report"]["report_id"].startswith("GLV-")
-    assert s["report"]["weight"]["measured_complete"] and s["report"]["valuation"]["items"]
 
-    # Restoring the session returns the same state.
     restored = client.get(f"/api/chat/session/{sid}").json()["session"]
     assert restored["report"]["report_id"] == s["report"]["report_id"]
 
-    # Reporting sees exactly one run for this session.
     account = client.get("/api/reports/account", params={"account": RAJESH.lower()}).json()
     runs = [r for r in account["runs"] if r["session_id"] == sid]
-    assert len(runs) == 1 and runs[0]["counts"]["damage"]["pass"] == 2
-    assert runs[0]["summary"]["recommendation"] == "PROCEED"
+    assert len(runs) == 1 and runs[0]["summary"]["recommendation"] == "PROCEED"
     assert runs[0]["summary"]["pledge_amount"] == s["stats"]["pledge_amount"]
-    overview = client.get("/api/reports/overview", params={"days": 7}).json()
-    assert overview["totals"]["runs"] >= 1 and len(overview["days"]) == 7
-    assert client.get("/api/reports/daily", params={"date": "bad"}).status_code == 400
 
-    # Locked after completion.
-    res = client.post("/api/chat/override", json={"session_id": sid, "target": "item", "ref": "ring-1", "justification": "late change"})
-    assert res.status_code == 409
+    res = client.post("/api/chat/weight", json={"session_id": sid, "ref": "item-1", "weight_gm": 11})
+    assert res.status_code == 409 and "locked" in res.json()["error"]
 
 
-def test_partial_collateral_override_and_blocker_mode(client, fake_bedrock):
+def test_inventory_can_be_curated(client, fake_bedrock):
+    sid = start(client)["session_id"]
+    step(client, sid, "collateral", files=[("collateral_images", photo())])
+
+    res = client.post("/api/chat/item", json={"session_id": sid, "name": "Gold Coin", "quantity": 4, "weight_gm": 8})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["item"]["id"] == "item-4" and body["item"]["origin"] == "manual"
+    assert body["session"]["audit"] == []
+    assert [r["id"] for r in body["session"]["inventory"]] == ["item-1", "item-2", "item-3", "item-4"]
+
+    res = client.post("/api/chat/item/remove", json={"session_id": sid, "ref": "item-3", "justification": "Customer kept it"})
+    assert res.status_code == 200
+    assert [r["id"] for r in res.json()["session"]["inventory"]] == ["item-1", "item-2", "item-4"]
+
+    assert client.post("/api/chat/item", json={"session_id": sid, "name": "x"}).status_code == 409
+    assert client.post("/api/chat/item/remove", json={"session_id": sid, "ref": "nope"}).status_code == 409
+    res = client.post("/api/chat/weight", json={"session_id": sid, "ref": "item-1", "weight_gm": 0})
+    assert res.status_code == 409 and "between" in res.json()["error"]
+
+    # A correction to a recorded weight needs a justification; the first entry does not, and only
+    # the correction reaches the audit trail.
+    res = client.post("/api/chat/weight", json={"session_id": sid, "ref": "item-1", "weight_gm": 18})
+    assert res.status_code == 200
+    assert [a["target"] for a in res.json()["session"]["audit"]] == ["item"]  # only the removal so far
+    res = client.post("/api/chat/weight", json={"session_id": sid, "ref": "item-1", "weight_gm": 19})
+    assert res.status_code == 409 and "justification" in res.json()["error"]
+    res = client.post("/api/chat/weight", json={"session_id": sid, "ref": "item-1", "weight_gm": 19, "justification": "Re-weighed at the counter"})
+    assert res.status_code == 200
+    audit = res.json()["session"]["audit"]
+    assert [a["target"] for a in audit] == ["item", "weight"] and audit[-1]["new_value"] == "19 g"
+
+
+def test_caratmeter_findings_hold_the_weight_step(client, fake_bedrock):
     client.put("/api/settings", json={"blocker_mode": True})
-    fake_bedrock.collateral_labels = ["gold chain", "gold chain"]  # only two chains detected
-    s = start(client)
-    sid = s["session_id"]
-    _, _, s = step(client, sid, "collateral", files=[("collateral_images", photo())])
-    assert s["workflow_state"] == "collateral"
-    assert sum(r["status"] == "verified" for r in s["inventory"]) == 2
-    assert s["gate"]["allowed"] is False
+    fake_bedrock.scale_weight_g = 33.0
+    sid = start(client, SURESH)["session_id"]
+    step(client, sid, "collateral", files=[("collateral_images", photo())])
+    weigh(client, sid, {"item-1": 10, "item-2": 11, "item-3": 12})
+    step(client, sid, "scale_photo", files=[("scale_image", photo("scale.png"))])
 
-    res, events, s = step(client, sid, "continue")
-    assert any(e == "notice" and "not sighted" in d["text"] for e, d in events)
-    assert s["workflow_state"] == "collateral"
+    _, events, s = step(client, sid, "measure")
+    flagged = [r for r in s["inventory"] if r["measurement_status"] != "match"]
+    assert [r["id"] for r in flagged] == ["item-2"]  # scripted: the device weighs it 0.62 g lighter
+    assert s["workflow_state"] == "weight" and s["weight"]["flagged"] == 1
+    assert next(d for e, d in events if e == "exec-done")["status"] == "alert"
 
-    for row in s["inventory"]:
-        if row["status"] == "pending":
-            res = client.post("/api/chat/override", json={
-                "session_id": sid, "target": "item", "ref": row["id"], "justification": "Verified physically at counter",
-            })
-            assert res.status_code == 200, res.text
+    _, events, s = step(client, sid, "continue")
+    assert any(e == "notice" and "need review" in d["text"] for e, d in events)
+    res = client.post("/api/chat/override", json={"session_id": sid, "target": "measurement", "ref": "item-2",
+                                                  "justification": "Re-assayed by the branch appraiser"})
+    assert res.status_code == 200, res.text
+    _, _, s = step(client, sid, "continue")
+    assert s["workflow_state"] == "damage"
+
+
+def test_caratmeter_failure_is_reported_and_retryable(client, fake_bedrock, monkeypatch):
+    from app.integrations import caratmeter
+
+    sid = start(client)["session_id"]
+    step(client, sid, "collateral", files=[("collateral_images", photo())])
+    weigh(client, sid, {"item-1": 10, "item-2": 11, "item-3": 12})
+
+    async def offline(*_args, **_kwargs):
+        raise caratmeter.CaratMeterError("The CaratMeter didn't respond. Check the device connection and try again.")
+
+    monkeypatch.setattr(caratmeter, "measure", offline)
+    _, events, s = step(client, sid, "measure")
+    assert any(e == "notice" and d["level"] == "error" and "didn't respond" in d["text"] for e, d in events)
+    assert s["workflow_state"] == "weight" and s["measurements"] is None
+    monkeypatch.undo()
+    _, _, s = step(client, sid, "measure")
+    assert s["workflow_state"] == "damage"
+
+
+def test_unreadable_machine_photo_falls_back_to_typing(client, fake_bedrock):
+    fake_bedrock.scale_weight_g = None  # display not legible
+    sid = start(client)["session_id"]
+    step(client, sid, "collateral", files=[("collateral_images", photo())])
+    weigh(client, sid, {"item-1": 10, "item-2": 11, "item-3": 12})
+
+    _, events, s = step(client, sid, "scale_photo", files=[("scale_image", photo("scale.png"))])
+    assert s["scale"]["weight_g"] is None and s["weight"]["scale_status"] == "missing"
+    assert next(d for e, d in events if e == "exec-done")["status"] == "fail"
+
+    res = client.post("/api/chat/scale", json={"session_id": sid, "weight_g": 33.04})
+    assert res.status_code == 200, res.text
     s = res.json()["session"]
-    assert s["gate"]["allowed"] is True
-    assert len(s["audit"]) == 6
+    assert s["weight"]["scale_status"] == "match" and s["scale"]["source"] == "assessor"
+    assert s["audit"][-1]["target"] == "scale"
 
 
-def test_upload_validation(client):
+def test_upload_validation(client, fake_bedrock):
     sid = start(client)["session_id"]
     res, _, _ = step(client, sid, "collateral")
     assert res.status_code == 400
@@ -177,19 +258,30 @@ def test_upload_validation(client):
     res, _, _ = step(client, sid, "teleport")
     assert res.status_code == 400
 
+    step(client, sid, "collateral", files=[("collateral_images", photo())])
+    res, _, _ = step(client, sid, "scale_photo")
+    assert res.status_code == 400 and "weighing machine" in res.json()["error"]
+    res, _, _ = step(client, sid, "scale_photo", files=[("scale_image", photo()), ("scale_image", photo("b.png"))])
+    assert res.status_code == 400
+    res, _, _ = step(client, sid, "measure", files=[("collateral_images", photo())])
+    assert res.status_code == 400 and "does not accept file uploads" in res.json()["error"]
+
 
 def test_damage_and_document_validation(client, fake_bedrock):
     sid = start(client)["session_id"]
     step(client, sid, "collateral", files=[("collateral_images", photo())])
     res, _, _ = step(client, sid, "damage", files=[("damage_images", photo())], damage_hints="[]")
-    assert res.status_code == 409  # weight & purity come first
-    res, _, _ = step(client, sid, "measure", files=[("collateral_images", photo())])
-    assert res.status_code == 400 and "does not accept file uploads" in res.json()["error"]
+    assert res.status_code == 409  # weights and purity come first
+
+    weigh(client, sid, {"item-1": 10, "item-2": 11, "item-3": 12})
     step(client, sid, "measure")
     bad = [{"ornament_id": "not-mine", "type": "Dent", "severity": "minor", "details": ""}]
     res, _, _ = step(client, sid, "damage", files=[("damage_images", photo())], damage_hints=json.dumps(bad))
     assert res.status_code == 400
-    other = [{"ornament_id": "ring-1", "type": "Other", "severity": "minor", "details": ""}]
+    over = [{"ornament_id": "item-1", "type": "Dent", "severity": "minor", "damage_percent": 140, "details": ""}]
+    res, _, _ = step(client, sid, "damage", files=[("damage_images", photo())], damage_hints=json.dumps(over))
+    assert res.status_code == 400 and "between 0 and 100" in res.json()["error"]
+    other = [{"ornament_id": "item-1", "type": "Other", "severity": "minor", "details": ""}]
     res, _, _ = step(client, sid, "damage", files=[("damage_images", photo())], damage_hints=json.dumps(other))
     assert res.status_code == 400 and "Describe" in res.json()["error"]
 
@@ -208,6 +300,7 @@ def test_document_mismatch_becomes_alert_and_can_be_overridden(client, fake_bedr
     fake_bedrock.document_matches = DocumentMatches(name=True, id=False, address_pct=40)
     sid = start(client)["session_id"]
     step(client, sid, "collateral", files=[("collateral_images", photo())])
+    weigh(client, sid, {"item-1": 10, "item-2": 11, "item-3": 12})
     step(client, sid, "measure")
     step(client, sid, "continue")  # damage -> valuation
     step(client, sid, "continue")  # valuation -> document
@@ -224,17 +317,24 @@ def test_ai_off_scenario_never_calls_bedrock(client, fake_bedrock):
     s = start(client, PRIYA)
     assert s["ai_enabled"] is False
     sid = s["session_id"]
-    _, events, s = step(client, sid, "collateral", files=[("collateral_images", photo())])
-    assert {r["status"] for r in s["inventory"]} == {"manual"}
-    assert s["workflow_state"] == "weight" and s["weight"]["scale_status"] == "missing"
-    _, _, s = step(client, sid, "measure")  # the CaratMeter is a device, not AI: it runs with AI off too
-    assert s["workflow_state"] == "damage" and s["measurements"]["count"] == 3
-    res = client.post("/api/chat/scale", json={"session_id": sid, "weight_g": 56.03})
-    assert res.status_code == 200, res.text
-    assert res.json()["session"]["weight"]["scale_status"] == "match" and res.json()["entry"]["target"] == "scale"
-    step(client, sid, "continue")  # damage -> valuation
-    _, _, s = step(client, sid, "continue")  # valuation -> document
-    assert s["workflow_state"] == "document"
+    _, _, s = step(client, sid, "collateral", files=[("collateral_images", photo())])
+    assert s["inventory"] == [] and s["workflow_state"] == "collateral"
+    assert "add the items by hand" in s["gate"]["reasons"][0]
+
+    for name, grams in (("Gold Necklace", 32), ("Gold Bangle", 18)):
+        res = client.post("/api/chat/item", json={"session_id": sid, "name": name, "weight_gm": grams})
+        assert res.status_code == 200, res.text
+    _, _, s = step(client, sid, "continue")
+    assert s["workflow_state"] == "weight" and s["weight"]["entered_g"] == 50
+
+    _, _, s = step(client, sid, "scale_photo", files=[("scale_image", photo("scale.png"))])
+    assert s["scale"]["asset_id"] and s["scale"]["weight_g"] is None
+    client.post("/api/chat/scale", json={"session_id": sid, "weight_g": 50.02})
+
+    _, _, s = step(client, sid, "measure")  # the CaratMeter is a device, not AI: it runs with AI off
+    assert s["workflow_state"] == "damage" and s["measurements"]["count"] == 2
+    step(client, sid, "continue")
+    step(client, sid, "continue")
     _, _, s = step(client, sid, "document", files=[("documents", photo())], document_types=json.dumps(["Aadhaar Card"]))
     assert s["documents"]["items"][0]["status"] == "not_checked"
     _, _, s = step(client, sid, "report")
@@ -244,13 +344,14 @@ def test_ai_off_scenario_never_calls_bedrock(client, fake_bedrock):
     assert "turned off" in answer["text"]
 
 
-def test_edit_endpoint(client):
+def test_edit_endpoint(client, fake_bedrock):
     sid = start(client)["session_id"]
-    res = client.post("/api/chat/edit", json={"session_id": sid, "ref": "ring-1", "changes": {"weight_gm": 5.4}, "justification": "Re-weighed"})
+    step(client, sid, "collateral", files=[("collateral_images", photo())])
+    res = client.post("/api/chat/edit", json={"session_id": sid, "ref": "item-1", "changes": {"name": "Gold Necklace"}, "justification": "It is a necklace"})
     assert res.status_code == 200
-    row = next(r for r in res.json()["session"]["inventory"] if r["id"] == "ring-1")
-    assert row["weight_gm"] == 5.4
-    res = client.post("/api/chat/edit", json={"session_id": sid, "ref": "ring-1", "changes": {"carat": "99"}, "justification": "Re-weighed"})
+    row = next(r for r in res.json()["session"]["inventory"] if r["id"] == "item-1")
+    assert row["name"] == "Gold Necklace"
+    res = client.post("/api/chat/edit", json={"session_id": sid, "ref": "item-1", "changes": {"carat": "99"}, "justification": "Wrong purity"})
     assert res.status_code == 409
 
 
@@ -263,33 +364,67 @@ def test_settings_are_validated_and_clamped(client):
     assert client.put("/api/settings", json={"blocker_mode": "maybe"}).status_code == 422
 
 
-def test_answer_uses_session_context(client, fake_bedrock):
-    import json as _json
+def test_valuation_settings_are_validated_and_captured_per_session(client, fake_bedrock):
+    body = client.get("/api/settings").json()
+    assert [m["key"] for m in body["valuation"]["materials"]] == ["gold", "silver"]
+    assert body["damage_deduction"] == "tenths"
 
-    from app import session as session_store
-    from app.api.chat import _qa_context
-    from app.settings import get_settings
-    from app.workflow import state as S
+    def pledge_for(session_id):
+        weigh(client, session_id, {"item-1": 10, "item-2": 11, "item-3": 12})
+        step(client, session_id, "measure")
+        return client.get(f"/api/chat/session/{session_id}").json()["session"]["stats"]["pledge_amount"]
 
-    sid = start(client)["session_id"]
-    step(client, sid, "collateral", files=[("collateral_images", photo())])
-    step(client, sid, "measure")
-    context = _qa_context(S.view(session_store.load(sid), get_settings()))
-    assert context["pledge"]["totals"]["pledge_amount"] > 0 and context["inventory"][0]["caratmeter"]["grade"] == "22K"
-    assert "id_number" not in context["loan"] and len(_json.dumps(context)) < 9000  # nothing is cut off
-    assert client.post("/api/chat/answer", json={"session_id": sid, "question": "Which items are damaged?"}).json()["text"] == "Polished message."
-    assert client.post("/api/chat/answer", json={"session_id": "0" * 32, "question": "hi"}).status_code == 404
+    before_id = start(client)["session_id"]
+    step(client, before_id, "collateral", files=[("collateral_images", photo())])
+    before = pledge_for(before_id)
+
+    valuation = body["valuation"]
+    valuation["materials"][0]["ltv_pct"] = 60
+    valuation["materials"].append({"key": "Platinum 950", "name": "Platinum", "ltv_pct": 65,
+                                   "grades": [{"grade": "pt950", "fineness_pct": 95, "rate_per_gram": 3100}]})
+    res = client.put("/api/settings", json={"valuation": valuation, "weight_tolerance_g": 9, "damage_deduction": "percent"})
+    assert res.status_code == 200, res.text
+    saved = res.json()
+    assert saved["valuation"]["materials"][2]["key"] == "platinum-950" and saved["valuation"]["materials"][2]["grades"][0]["grade"] == "PT950"
+    assert saved["weight_tolerance_g"] == 5.0 and saved["damage_deduction"] == "percent"
+
+    after_id = start(client)["session_id"]
+    step(client, after_id, "collateral", files=[("collateral_images", photo())])
+    assert pledge_for(after_id) < before  # LTV 60 % applies to new sessions only
+    assert client.get(f"/api/chat/session/{before_id}").json()["session"]["stats"]["pledge_amount"] == before
+
+    dup = {"materials": [{"key": "gold", "name": "Gold", "ltv_pct": 75, "grades": [
+        {"grade": "22K", "fineness_pct": 91.6, "rate_per_gram": 1}, {"grade": "22k", "fineness_pct": 91.6, "rate_per_gram": 1}]}]}
+    assert client.put("/api/settings", json={"valuation": dup}).status_code == 422
+    assert client.put("/api/settings", json={"valuation": {"materials": []}}).status_code == 422
+    assert client.put("/api/settings", json={"damage_deduction": "half"}).status_code == 422
+
+
+def test_mock_caratmeter_gateway(client):
+    status = client.get("/api/integrations/caratmeter/v1/status", params={"branch": "FED-COK-006"}).json()
+    assert status["device_id"] == "CM-FED-COK-006" and status["connected"] is True
+    body = {"branch": "FED-COK-006", "account_number": SURESH, "samples": [
+        {"tag": "item-1", "material": "gold", "entered_weight_g": 18},
+        {"tag": "item-2", "material": "gold", "entered_weight_g": 8},
+    ]}
+    first = client.post("/api/integrations/caratmeter/v1/measurements", json=body).json()
+    second = client.post("/api/integrations/caratmeter/v1/measurements", json=body).json()
+    chain, pendant = first["measurements"]
+    assert [m["net_weight_g"] for m in first["measurements"]] == [m["net_weight_g"] for m in second["measurements"]]
+    assert abs(chain["net_weight_g"] - 18) <= 0.05 and 0 < chain["fineness_pct"] <= 100
+    assert 7.3 < pendant["net_weight_g"] < 7.45  # scripted finding for this demo account
+    assert client.post("/api/integrations/caratmeter/v1/measurements", json={"samples": [{"tag": ""}]}).status_code == 422
 
 
 def test_report_pdf_download(client, fake_bedrock):
-    fake_bedrock.scale_weight_g = 90.02
+    fake_bedrock.scale_weight_g = 33.01
     sid = start(client)["session_id"]
     assert client.get(f"/api/reports/session/{sid}/pdf").status_code == 409  # no report yet
 
     step(client, sid, "collateral", files=[("collateral_images", photo())])
+    weigh(client, sid, {"item-1": 10, "item-2": 11, "item-3": 12})
+    step(client, sid, "scale_photo", files=[("scale_image", photo("scale.png"))])
     step(client, sid, "measure")
-    for ref in ("bangle-1", "ring-3"):
-        client.post("/api/chat/override", json={"session_id": sid, "target": "damage", "ref": ref, "justification": "No damage on inspection"})
     step(client, sid, "continue")  # damage -> valuation
     step(client, sid, "continue")  # valuation -> document
     step(client, sid, "document", files=[("documents", photo())], document_types=json.dumps(["Aadhaar Card"]))
@@ -301,7 +436,28 @@ def test_report_pdf_download(client, fake_bedrock):
     assert res.content.startswith(b"%PDF") and len(res.content) > 5000
     assert client.get(f"/api/reports/session/{sid}/pdf?inline=true").headers["content-disposition"].startswith("inline")
     assert client.get("/api/reports/session/nope/pdf").status_code == 404
-    assert client.get(f"/api/reports/session/{'f' * 32}/pdf").status_code == 404
+
+
+def test_answer_uses_session_context(client, fake_bedrock):
+    import json as _json
+
+    from app import session as session_store
+    from app.api.chat import _qa_context
+    from app.settings import get_settings
+    from app.workflow import state as S
+
+    sid = start(client)["session_id"]
+    step(client, sid, "collateral", files=[("collateral_images", photo())])
+    weigh(client, sid, {"item-1": 10, "item-2": 11, "item-3": 12})
+    step(client, sid, "measure")
+    context = _qa_context(S.view(session_store.load(sid), get_settings()))
+    assert context["pledge"]["totals"]["pledge_amount"] > 0
+    assert context["inventory"][0]["entered_weight_g"] == 10
+    assert context["inventory"][0]["listed_from"] == "collateral photo"
+    assert "id_number" not in context["loan"] and len(_json.dumps(context)) < 9000  # nothing is cut off
+
+    assert client.post("/api/chat/answer", json={"session_id": sid, "question": "Which items are damaged?"}).json()["text"] == "Polished message."
+    assert client.post("/api/chat/answer", json={"session_id": "0" * 32, "question": "hi"}).status_code == 404
 
 
 def test_assets_reject_bad_ids(client):
@@ -309,7 +465,7 @@ def test_assets_reject_bad_ids(client):
     assert client.get("/api/assets/" + "a" * 32).status_code == 404
 
 
-def test_upload_content_type_is_pinned_and_assets_never_render_html(client):
+def test_upload_content_type_is_pinned_and_assets_never_render_html(client, fake_bedrock):
     sid = start(client)["session_id"]
     _, _, s = step(client, sid, "collateral", files=[("collateral_images", ("x.png", png_bytes((120, 90)), "text/html"))])
     asset_id = s["collateral"]["images"][0]["asset_id"]
@@ -337,7 +493,7 @@ def test_stale_session_write_is_rejected(client):
         session_store.save(stale)
 
 
-def test_audit_row_is_written_with_the_override(client):
+def test_audit_row_is_written_with_the_override(client, fake_bedrock):
     from sqlalchemy import func, select
 
     from app.db import models as M
@@ -345,7 +501,13 @@ def test_audit_row_is_written_with_the_override(client):
 
     sid = start(client)["session_id"]
     step(client, sid, "collateral", files=[("collateral_images", photo())])
-    res = client.post("/api/chat/override", json={"session_id": sid, "target": "damage", "ref": "ring-3", "justification": "No damage on inspection"})
+    client.post("/api/chat/weight", json={"session_id": sid, "ref": "item-1", "weight_gm": 12})
+    with session_scope() as db:
+        first = db.scalar(select(func.count()).select_from(M.Override).where(M.Override.session_id == sid))
+    assert first == 0  # weighing an ornament is not an override
+
+    res = client.post("/api/chat/weight", json={"session_id": sid, "ref": "item-1", "weight_gm": 13,
+                                                "justification": "Re-weighed at the counter"})
     assert res.status_code == 200, res.text
     with session_scope() as db:
         count = db.scalar(select(func.count()).select_from(M.Override).where(M.Override.session_id == sid))
@@ -356,106 +518,3 @@ def test_in_progress_sessions_are_listed(client):
     sid = start(client)["session_id"]
     listed = client.get("/api/chat/sessions").json()["sessions"]
     assert any(x["session_id"] == sid and x["workflow_state"] == "collateral" for x in listed)
-
-
-# --------------------------------------------------------------------------- weight, purity & valuation
-def test_caratmeter_discrepancies_hold_the_weight_step(client, fake_bedrock):
-    client.put("/api/settings", json={"blocker_mode": True})
-    fake_bedrock.scale_weight_g = 68.0
-    sid = start(client, SURESH)["session_id"]
-    _, _, s = step(client, sid, "collateral", files=[("collateral_images", photo())])
-    assert s["workflow_state"] == "weight"
-
-    _, events, s = step(client, sid, "measure")
-    rows = {r["id"]: r for r in s["inventory"]}
-    assert rows["pendant-1"]["measurement_status"] == "weight_mismatch"
-    assert rows["bangle-2"]["measurement_status"] == "purity_low" and rows["bangle-2"]["measurement"]["grade"] == "20K"
-    assert s["workflow_state"] == "weight" and s["weight"]["flagged"] == 2
-    assert next(d for e, d in events if e == "exec-done")["status"] == "alert"
-
-    _, events, s = step(client, sid, "continue")
-    assert any(e == "notice" and "differ from the declared" in d["text"] for e, d in events)
-    for ref in ("pendant-1", "bangle-2"):
-        res = client.post("/api/chat/override", json={"session_id": sid, "target": "measurement", "ref": ref,
-                                                      "justification": "Re-tested by the branch appraiser"})
-        assert res.status_code == 200, res.text
-    _, _, s = step(client, sid, "continue")
-    assert s["workflow_state"] == "damage"
-    assert "continue" in s["allowed_actions"]
-    items = {i["ornament_id"]: i for i in s["valuation"]["items"]}
-    assert items["bangle-2"]["grade"] == "20K" and items["pendant-1"]["weight_g"] < 7.5
-
-
-def test_caratmeter_failure_is_reported_and_retryable(client, fake_bedrock, monkeypatch):
-    from app.integrations import caratmeter
-
-    sid = start(client)["session_id"]
-    step(client, sid, "collateral", files=[("collateral_images", photo())])
-
-    async def offline(*_args, **_kwargs):
-        raise caratmeter.CaratMeterError("The CaratMeter didn't respond. Check the device connection and try again.")
-
-    monkeypatch.setattr(caratmeter, "measure", offline)
-    _, events, s = step(client, sid, "measure")
-    assert any(e == "notice" and d["level"] == "error" and "didn't respond" in d["text"] for e, d in events)
-    assert next(d for e, d in events if e == "exec-done")["status"] == "error"
-    assert s["workflow_state"] == "weight" and s["measurements"] is None
-    monkeypatch.undo()
-    _, _, s = step(client, sid, "measure")
-    assert s["workflow_state"] == "damage"
-
-
-def test_silver_is_valued_with_its_own_rates(client, fake_bedrock):
-    s = start(client, LAKSHMI)
-    anklet = next(i for i in s["valuation"]["items"] if i["ornament_id"] == "anklet-1")
-    assert anklet["material"] == "Silver" and anklet["grade"] == "925" and anklet["ltv_pct"] == 70
-    assert s["options"]["grades"]["silver"] == ["999", "925"]
-    sid = s["session_id"]
-    step(client, sid, "collateral", files=[("collateral_images", photo())])
-    _, _, s = step(client, sid, "measure")
-    row = next(r for r in s["inventory"] if r["id"] == "anklet-1")
-    assert row["material"] == "silver" and row["measurement"]["karat"] is None and row["measurement_status"] == "match"
-
-
-def test_valuation_settings_are_validated_and_captured_per_session(client):
-    body = client.get("/api/settings").json()
-    assert [m["key"] for m in body["valuation"]["materials"]] == ["gold", "silver"]
-    assert body["damage_deduction"] == "tenths"
-
-    before = start(client)
-    valuation = body["valuation"]
-    valuation["materials"][0]["ltv_pct"] = 60
-    valuation["materials"].append({"key": "Platinum 950", "name": "Platinum", "ltv_pct": 65,
-                                   "grades": [{"grade": "pt950", "fineness_pct": 95, "rate_per_gram": 3100}]})
-    res = client.put("/api/settings", json={"valuation": valuation, "weight_tolerance_g": 9, "damage_deduction": "percent"})
-    assert res.status_code == 200, res.text
-    saved = res.json()
-    assert saved["valuation"]["materials"][2]["key"] == "platinum-950" and saved["valuation"]["materials"][2]["grades"][0]["grade"] == "PT950"
-    assert saved["weight_tolerance_g"] == 5.0 and saved["damage_deduction"] == "percent"
-
-    after = start(client)
-    assert after["stats"]["pledge_amount"] < before["stats"]["pledge_amount"]  # LTV 60 % applies to new sessions only
-    again = client.get(f"/api/chat/session/{before['session_id']}").json()["session"]
-    assert again["stats"]["pledge_amount"] == before["stats"]["pledge_amount"]
-
-    dup = {"materials": [{"key": "gold", "name": "Gold", "ltv_pct": 75, "grades": [
-        {"grade": "22K", "fineness_pct": 91.6, "rate_per_gram": 1}, {"grade": "22k", "fineness_pct": 91.6, "rate_per_gram": 1}]}]}
-    assert client.put("/api/settings", json={"valuation": dup}).status_code == 422
-    assert client.put("/api/settings", json={"valuation": {"materials": []}}).status_code == 422
-    assert client.put("/api/settings", json={"damage_deduction": "half"}).status_code == 422
-
-
-def test_mock_caratmeter_gateway(client):
-    status = client.get("/api/integrations/caratmeter/v1/status", params={"branch": "FED-COK-006"}).json()
-    assert status["device_id"] == "CM-FED-COK-006" and status["connected"] is True
-    body = {"branch": "FED-COK-006", "account_number": SURESH, "samples": [
-        {"tag": "pendant-1", "material": "gold", "declared_purity": "22", "declared_weight_g": 8},
-        {"tag": "anklet-1", "material": "silver", "declared_purity": "925", "declared_weight_g": 64},
-    ]}
-    first = client.post("/api/integrations/caratmeter/v1/measurements", json=body).json()
-    second = client.post("/api/integrations/caratmeter/v1/measurements", json=body).json()
-    pendant, anklet = first["measurements"]
-    assert [m["net_weight_g"] for m in first["measurements"]] == [m["net_weight_g"] for m in second["measurements"]]
-    assert 7.3 < pendant["net_weight_g"] < 7.45 and abs(pendant["karat"] - 22) < 0.1
-    assert abs(anklet["fineness_pct"] - 92.5) <= 0.12 and anklet["karat"] is None
-    assert client.post("/api/integrations/caratmeter/v1/measurements", json={"samples": [{"tag": ""}]}).status_code == 422

@@ -37,12 +37,12 @@ export default function PledgeCard({ session }: { session: SessionView }) {
         }
         actions={
           t.is_estimate ? (
-            <Badge tone="gold" icon="info" title="Valued on CBS-declared weight and purity until the CaratMeter readings are fetched">
-              Estimate · CBS weight
+            <Badge tone="gold" icon="info" title="Provisional until every ornament has a CaratMeter assay">
+              Provisional
             </Badge>
           ) : (
-            <Badge tone="ok" icon="check" title="Valued on CaratMeter weight and assessed purity">
-              Measured
+            <Badge tone="ok" icon="check" title="Every ornament weighed at the counter and assayed by the CaratMeter">
+              Assayed
             </Badge>
           )
         }
@@ -55,7 +55,8 @@ export default function PledgeCard({ session }: { session: SessionView }) {
             <AnimatedNumber value={t.pledge_amount} format={(n) => formatINR(n)} />
           </p>
           <p className="mt-2 text-xs text-white/70">
-            on {formatWeight(t.weight_g)} {t.is_estimate ? "declared" : "measured"} · {plural(valuation.items.length, "item")}
+            on {formatWeight(t.weight_g)} entered · {plural(valuation.items.length, "ornament")}
+            {t.is_estimate ? " · not all assayed yet" : ""}
           </p>
         </div>
 

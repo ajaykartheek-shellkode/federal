@@ -27,7 +27,7 @@ export default function ActionBar() {
     case "collateral":
       primary = (
         <Button variant="gold" icon="camera" onClick={() => openDialog({ kind: "collateral" })}>
-          {hasPhotos ? "Add more photos" : "Upload collateral photos"}
+          {hasPhotos ? "Re-capture photos" : "Upload collateral photos"}
         </Button>
       );
       if (hasPhotos) {
@@ -41,38 +41,58 @@ export default function ActionBar() {
       break;
     case "weight": {
       const measured = !!session.measurements;
-      primary = measured ? (
-        <Button variant="secondary" icon="refresh" disabled={busy} onClick={() => runStep("measure")}>
-          Re-measure
-        </Button>
-      ) : (
-        <Button variant="gold" icon="weighScale" disabled={busy} onClick={() => runStep("measure")}>
-          Fetch CaratMeter readings
-        </Button>
-      );
-      if (measured) {
+      const weighed = session.weight.unweighed.length === 0 && session.inventory.length > 0;
+      if (!session.scale) {
+        primary = (
+          <Button variant="gold" icon="weighScale" disabled={busy} onClick={() => openDialog({ kind: "scale-photo" })}>
+            Weighing-machine photo
+          </Button>
+        );
         secondary = (
+          <Button variant="secondary" icon="cpu" disabled={busy || !weighed} onClick={() => runStep("measure")}>
+            Fetch purity
+          </Button>
+        );
+      } else if (!measured) {
+        primary = (
+          <Button variant="gold" icon="cpu" disabled={busy || !weighed} onClick={() => runStep("measure")}>
+            Fetch purity from CaratMeter
+          </Button>
+        );
+        secondary = (
+          <Button variant="secondary" icon="refresh" disabled={busy} onClick={() => openDialog({ kind: "scale-photo" })}>
+            Re-take machine photo
+          </Button>
+        );
+      } else {
+        primary = (
           <Button variant={blocked ? "secondary" : "gold"} icon={blocked ? "lock" : undefined} iconRight={blocked ? undefined : "arrowRight"} disabled={busy || blocked} onClick={() => runStep("continue")}>
             Continue to damage
           </Button>
         );
+        secondary = (
+          <Button variant="secondary" icon="refresh" disabled={busy} onClick={() => runStep("measure")}>
+            Re-assay
+          </Button>
+        );
         showGate = blocked;
       }
+      if (!weighed) showGate = blocked;
       break;
     }
     case "damage": {
-      const pending = session.cbs_damage_pending.length;
       primary = (
         <Button variant="gold" icon="alert" onClick={() => openDialog({ kind: "damage" })}>
           Record damage
-          {pending > 0 && (
-            <span className="ml-0.5 rounded-full bg-brand-900 px-1.5 py-px text-2xs font-bold text-gold-300">{pending}</span>
-          )}
         </Button>
       );
       secondary = (
         <Button variant="secondary" icon={blocked ? "lock" : undefined} iconRight={blocked ? undefined : "arrowRight"} disabled={busy || blocked} onClick={() => runStep("continue")}>
-          {session.damages.length ? "Continue to documents" : "No damage · continue"}
+          {session.damages.length
+            ? session.steps.includes("valuation")
+              ? "Continue to pledge valuation"
+              : "Continue to documents"
+            : "No damage · continue"}
         </Button>
       );
       showGate = blocked;

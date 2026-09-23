@@ -3,15 +3,19 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, type ReactNode } from "react";
 import {
   ApiError,
+  addInventoryItem,
   askAgent,
   buildStepForm,
   editItem as apiEditItem,
   enterScaleReading,
   getSession,
   overrideFinding,
+  removeInventoryItem,
+  setItemWeight,
   startSession,
   streamStep,
   type ItemChanges,
+  type NewItem,
   type StepPayload,
 } from "@/lib/api";
 import { parseIntent } from "@/lib/intents";
@@ -32,6 +36,9 @@ interface VerificationApi {
   override: (target: OverrideTarget, ref: string, justification: string) => Promise<boolean>;
   editItem: (ref: string, changes: ItemChanges, justification: string) => Promise<boolean>;
   setScaleReading: (weightG: number, justification: string) => Promise<boolean>;
+  setWeight: (ref: string, weightGm: number, justification?: string) => Promise<boolean>;
+  addItem: (item: NewItem) => Promise<boolean>;
+  removeItem: (ref: string, justification: string) => Promise<boolean>;
   resume: (sessionId: string) => Promise<void>;
   revealItems: () => void;
   reset: () => void;
@@ -266,13 +273,14 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
           dispatch({ type: "user", text: trimmed });
           dispatch({ type: "show-items" });
           dispatch({ type: "view", view: "verify" });
-          const { stats } = session;
-          const damaged = session.inventory.filter((r) => r.cbs_damage).map((r) => r.name);
+          const { stats, inventory } = session;
+          const names = inventory.slice(0, 4).map((r) => r.name).join(", ");
           bot(
-            `Here is the pledged inventory from CBS — <strong>${stats.items} items</strong> (${stats.pieces} pieces), ` +
-              `<strong>${stats.total_weight} g</strong> declared.` +
-              (damaged.length ? ` CBS declares damage on <strong>${damaged.join(", ")}</strong>.` : "") +
-              " The table gains the columns of each step as it completes — sighting, CaratMeter reading, damage, then the pledge amount."
+            inventory.length
+              ? `Here is the pledge list — <strong>${stats.items} ornament${stats.items === 1 ? "" : "s"}</strong>` +
+                  (names ? `: <strong>${names}${inventory.length > 4 ? ` +${inventory.length - 4} more` : ""}</strong>` : "") +
+                  `. ${stats.weighed}/${stats.items} weighed. The table gains the columns of each step as it completes.`
+              : "Nothing is on the pledge list yet — upload the collateral photo and I'll list every ornament I can see."
           );
           return;
         }
@@ -336,6 +344,23 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
 
   const revealItems = useCallback(() => dispatch({ type: "show-items" }), []);
 
+  const setWeight = useCallback(
+    (ref: string, weightGm: number, justification = "") =>
+      mutate((sid) => setItemWeight(sid, ref, weightGm, justification), "Weight recorded"),
+    [mutate]
+  );
+
+  const addItem = useCallback(
+    (item: NewItem) => mutate((sid) => addInventoryItem(sid, item), "Ornament added to the list"),
+    [mutate]
+  );
+
+  const removeItem = useCallback(
+    (ref: string, justification: string) =>
+      mutate((sid) => removeInventoryItem(sid, ref, justification), "Ornament removed from the list"),
+    [mutate]
+  );
+
   const setScaleReading = useCallback(
     (weightG: number, justification: string) =>
       mutate((sid) => enterScaleReading(sid, weightG, justification), "Scale reading recorded in the audit trail"),
@@ -376,6 +401,9 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
       override,
       editItem,
       setScaleReading,
+      setWeight,
+      addItem,
+      removeItem,
       revealItems,
       resume,
       reset,
@@ -385,7 +413,7 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
       toast,
       dismissToast: (id) => dispatch({ type: "dismiss-toast", id }),
     }),
-    [state, start, runStep, send, override, editItem, setScaleReading, revealItems, resume, reset, toast]
+    [state, start, runStep, send, override, editItem, setScaleReading, setWeight, addItem, removeItem, revealItems, resume, reset, toast]
   );
 
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;

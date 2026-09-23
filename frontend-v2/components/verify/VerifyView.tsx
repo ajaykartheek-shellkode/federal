@@ -51,7 +51,7 @@ export default function VerifyView() {
   }, [session]);
 
   // Bring the inventory into view the first time it is revealed.
-  const revealed = !!session && (state.showItems || session.collateral.images.length > 0);
+  const revealed = !!session && (state.showItems || session.inventory.length > 0);
   useEffect(() => {
     if (!revealed || wasRevealed.current) return;
     wasRevealed.current = true;
@@ -81,8 +81,8 @@ export default function VerifyView() {
 
   const showDocuments = session.documents !== null || ["document", "report", "done"].includes(session.workflow_state);
   const weighs = session.steps.includes("weight");
-  // The pledged inventory stays off screen until the assessor asks for it, or a step produces results for it.
-  const showItems = state.showItems || session.collateral.images.length > 0;
+  // The pledge list appears as soon as the photo produces one, or when the assessor asks for it.
+  const showItems = state.showItems || session.inventory.length > 0;
   // The pledge amount is its own step, reviewed once damage is recorded.
   const showPledge = weighs && ["valuation", "document", "report", "done"].includes(session.workflow_state);
 
@@ -101,7 +101,8 @@ export default function VerifyView() {
         {showItems && <InventoryTable session={session} />}
         {showPledge && <PledgeCard session={session} />}
         {showDocuments && <DocumentsCard session={session} />}
-        <AuditTrail session={session} />
+        {/* The audit trail belongs to the finished verification and the report, not the journey. */}
+        {session.workflow_state === "done" && <AuditTrail session={session} />}
       </div>
     </div>
   );

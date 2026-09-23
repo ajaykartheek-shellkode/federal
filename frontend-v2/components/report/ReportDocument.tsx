@@ -95,8 +95,8 @@ export default function ReportDocument({ session }: { session: SessionView }) {
         <div className="flex gap-6 text-center">
           {[
             [String(stats.items), "Items"],
-            weight?.measured_complete ? [formatWeight(weight.measured_g ?? 0), "Measured weight"] : [formatWeight(stats.total_weight), "Declared weight"],
-            [`${stats.verified + stats.overridden}/${stats.items}`, "Sighted"],
+            [formatWeight(stats.total_weight), "Weight entered"],
+            [`${stats.measured}/${stats.items}`, "Assayed"],
             [formatINR(pledge), valuation?.totals.is_estimate ? "Pledge (est.)" : "Pledge amount"],
           ].map(([v, l]) => (
             <div key={l}>
@@ -167,9 +167,9 @@ export default function ReportDocument({ session }: { session: SessionView }) {
               <th className={th} />
               <th className={th}>Ornament</th>
               <th className={th}>Purity</th>
-              <th className={th}>Weight</th>
+              <th className={th}>Weight entered</th>
               <th className={th}>Qty</th>
-              <th className={th}>Sighting</th>
+              <th className={th}>Listed</th>
               <th className={th}>Damage</th>
             </tr>
           </thead>
@@ -188,13 +188,14 @@ export default function ReportDocument({ session }: { session: SessionView }) {
                   <td className={td}>{formatWeight(it.weight_gm)}</td>
                   <td className={td}>{it.quantity}</td>
                   <td className={td}>
-                    <Pill tone={ITEM_META[it.status].tone}>{ITEM_META[it.status].label}</Pill>
+                    <Pill tone={ITEM_META[it.origin ?? "detected"].tone}>{ITEM_META[it.origin ?? "detected"].label}</Pill>
                   </td>
                   <td className={td}>
                     {dmg ? (
-                      <Result status={dmg.status} overridden={dmg.overridden} />
-                    ) : it.cbs_damage ? (
-                      <Pill tone={it.cbs_damage_waived ? "neutral" : "warn"}>{it.cbs_damage_waived ? "CBS waived" : "Not recorded"}</Pill>
+                      <span className="flex items-center gap-1.5">
+                        <Result status={dmg.status} overridden={dmg.overridden} />
+                        {dmg.damage_percent > 0 && <span className="text-[10px] text-[#58647A]">−{dmg.damage_percent}%</span>}
+                      </span>
                     ) : (
                       "—"
                     )}
@@ -210,9 +211,9 @@ export default function ReportDocument({ session }: { session: SessionView }) {
         <Section n={next()} title="Weight, purity & pledge valuation">
           <div className="mb-3 grid grid-cols-3 gap-3">
             {[
-              ["Weighing scale", weight.scale_g !== null ? formatWeight(weight.scale_g) : "Not captured", weight.scale_source === "photo" ? `Read from photo ${(weight.scale_photo ?? 0) + 1}` : weight.scale_source === "assessor" ? "Entered by assessor" : "—"],
-              ["CaratMeter total", weight.measured_g !== null ? formatWeight(weight.measured_g) : "Not measured", weight.device?.device_id ? `${weight.device.model ?? "CaratMeter"} · ${weight.device.device_id}` : "—"],
-              ["CBS declared", formatWeight(weight.declared_g), `${stats.items} items`],
+              ["Entered per item", formatWeight(weight.entered_g), `${stats.items} ornaments`],
+              ["Weighing machine", weight.scale_g !== null ? formatWeight(weight.scale_g) : "Not captured", weight.scale_source === "photo" ? "Read from the machine photo" : weight.scale_source === "assessor" ? "Entered by assessor" : "—"],
+              ["CaratMeter", weight.measured_g !== null ? formatWeight(weight.measured_g) : "Not assayed", weight.device?.device_id ? `${weight.device.model ?? "CaratMeter"} · ${weight.device.device_id}` : "—"],
             ].map(([k, v, sub]) => (
               <div key={k} className="rounded-lg border border-[#E3E8F0] px-3 py-2">
                 <p className="text-[9.5px] font-bold uppercase tracking-wider text-[#58647A]">{k}</p>
@@ -222,13 +223,13 @@ export default function ReportDocument({ session }: { session: SessionView }) {
             ))}
           </div>
           <p className="mb-2 text-[11px]">
-            Scale reconciliation:{" "}
+            Reconciliation:{" "}
             <span className="font-semibold text-[#15223A]">
               {weight.scale_status === "match"
-                ? `within tolerance (±${formatWeight(weight.tolerance_g)})`
+                ? `the machine agrees with the entered weights (±${formatWeight(weight.tolerance_g)})`
                 : weight.scale_status === "mismatch"
-                  ? `differs by ${formatWeight(Math.abs(weight.scale_diff_g ?? 0))} (tolerance ±${formatWeight(weight.tolerance_g)})`
-                  : "no scale reading"}
+                  ? `the machine differs from the entered weights by ${formatWeight(Math.abs(weight.scale_diff_g ?? 0))} (tolerance ±${formatWeight(weight.tolerance_g)})`
+                  : "no weighing-machine total captured"}
               {weight.scale_overridden && " — accepted by assessor"}
             </span>
           </p>
@@ -236,8 +237,8 @@ export default function ReportDocument({ session }: { session: SessionView }) {
             <thead>
               <tr>
                 <th className={th}>Ornament</th>
-                <th className={th}>Declared</th>
-                <th className={th}>Measured</th>
+                <th className={th}>Weight entered</th>
+                <th className={th}>CaratMeter assay</th>
                 <th className={th}>Δ wt</th>
                 <th className={th}>Reading</th>
                 <th className={cn(th, "text-right")}>Rate/g</th>
@@ -271,7 +272,7 @@ export default function ReportDocument({ session }: { session: SessionView }) {
           </table>
           <div className="report-avoid-break mt-2.5 flex items-end justify-between gap-6">
             <p className="max-w-[95mm] text-[10px] leading-snug text-[#58647A]">
-              Valued on {valuation.totals.is_estimate ? "CBS-declared" : "CaratMeter-measured"} weight at the rate for the {valuation.totals.is_estimate ? "declared" : "assessed"} purity × LTV, less the damage deduction ({DAMAGE_DEDUCTION_META[valuation.damage_deduction_mode].hint}). Rates as configured when the verification started. Indicative — not a sanction.
+              Valued on the weight entered for each ornament at the rate for the purity the CaratMeter assayed × LTV, less the damage deduction ({DAMAGE_DEDUCTION_META[valuation.damage_deduction_mode].hint}).{valuation.totals.is_estimate ? " Some ornaments are not assayed yet, so the total is provisional." : ""} Rates as configured when the verification started. Indicative — not a sanction.
             </p>
             <div className="min-w-[64mm] text-[11.5px]">
               {[
