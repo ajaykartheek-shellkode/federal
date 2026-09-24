@@ -6,6 +6,7 @@ import {
   addInventoryItem,
   askAgent,
   buildStepForm,
+  openApplicationFor,
   editItem as apiEditItem,
   enterScaleReading,
   getSession,
@@ -15,6 +16,7 @@ import {
   startSession,
   streamStep,
   type ItemChanges,
+  type NewCustomer,
   type NewItem,
   type StepPayload,
 } from "@/lib/api";
@@ -32,6 +34,7 @@ interface VerificationApi {
   state: AppState;
   session: SessionView | null;
   start: (account: string) => Promise<void>;
+  openApplication: (customer: NewCustomer) => Promise<boolean>;
   runStep: (action: StepAction, payload?: StepPayload) => Promise<boolean>;
   send: (text: string) => Promise<void>;
   override: (target: OverrideTarget, ref: string, justification: string) => Promise<boolean>;
@@ -175,12 +178,35 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
           bot(res.message);
         } catch (err) {
           if (err instanceof ApiError && err.status === 404) {
-            bot(`${err.message} Please check the number and try again.`, (err.body.samples as SampleAccount[]) ?? []);
+            bot(
+              `${err.message} Check the number, pick one of these, or <strong>open an application for a new customer</strong>.`,
+              (err.body.samples as SampleAccount[]) ?? []
+            );
             return;
           }
           handleApiError(err, "Loading the account");
         }
       });
+    },
+    [bot, exclusive, handleApiError, setSession]
+  );
+
+  const openApplication = useCallback(
+    async (customer: NewCustomer) => {
+      let ok = false;
+      await exclusive("start", async () => {
+        try {
+          const res = await openApplicationFor(customer);
+          setSession(res.session);
+          dispatch({ type: "view", view: "verify" });
+          dispatch({ type: "user", text: `New customer · ${customer.name}` });
+          bot(res.message);
+          ok = true;
+        } catch (err) {
+          handleApiError(err, "Opening the application");
+        }
+      });
+      return ok;
     },
     [bot, exclusive, handleApiError, setSession]
   );
@@ -270,6 +296,10 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
         case "open":
           dispatch({ type: "user", text: trimmed });
           dispatch({ type: "dialog", dialog: { kind: intent.dialog } });
+          return;
+        case "new-customer":
+          dispatch({ type: "user", text: trimmed });
+          dispatch({ type: "dialog", dialog: { kind: "new-customer" } });
           return;
         case "show-items": {
           const session = sessionRef.current;
@@ -400,6 +430,7 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
       state,
       session: state.session,
       start,
+      openApplication,
       runStep,
       send,
       override,
@@ -417,7 +448,7 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
       toast,
       dismissToast: (id) => dispatch({ type: "dismiss-toast", id }),
     }),
-    [state, start, runStep, send, override, editItem, setScaleReading, setWeight, addItem, removeItem, revealItems, resume, reset, toast]
+    [state, start, openApplication, runStep, send, override, editItem, setScaleReading, setWeight, addItem, removeItem, revealItems, resume, reset, toast]
   );
 
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;

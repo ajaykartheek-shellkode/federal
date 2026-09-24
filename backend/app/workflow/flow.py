@@ -23,6 +23,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable, List, Optional
 
+from app import cbs
 from app import session as session_store
 from app import steps as STEPS
 from app import store
@@ -449,7 +450,10 @@ async def _report(ctx: StepContext) -> None:
 
 def _issue_loan_account(state: dict) -> Optional[str]:
     """Open the gold loan account for a sanctioned application (portal-issued running number)."""
-    return S.record_loan_account(state, store.next_account_number(state["loan"].get("branch", "")))
+    issued = S.record_loan_account(state, store.next_account_number(state["loan"].get("branch", "")))
+    if issued:
+        cbs.attach_account(state["loan"].get("customer_id", ""), issued)
+    return issued
 
 
 def _persist_report(state: dict) -> None:

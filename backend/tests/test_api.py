@@ -82,6 +82,49 @@ def test_start_opens_an_application_for_a_fresh_loan(client):
         assert found["application"]["reference"] != session["application"]["reference"]  # a new application each time
 
 
+def test_application_can_be_opened_for_a_new_customer(client, fake_bedrock):
+    """A walk-in who is not in CBS yet: the branch onboards them and the application opens."""
+    new_customer = {"name": "Anita Menon", "mobile": "90000 12345", "id_number": "4411 9087 2213",
+                    "address": "9 Residency Road, Bengaluru", "branch": "FED-BLR-011"}
+    res = client.post("/api/chat/application", json=new_customer)
+    assert res.status_code == 200, res.text
+    s = res.json()["session"]
+    assert s["loan"]["customer_name"] == "Anita Menon" and s["loan"]["customer_id"].startswith("CBS")
+    assert s["application"]["kind"] == "fresh" and s["loan"]["account_number"] == ""
+    assert s["loan"]["id_number_masked"].endswith("2213")
+
+    # They are now findable like any other customer, and cannot be onboarded twice.
+    found = start(client, "90000 12345")
+    assert found["loan"]["customer_name"] == "Anita Menon"
+    assert client.post("/api/chat/application", json=new_customer).status_code == 409
+
+    for bad in ({**new_customer, "name": "A"}, {**new_customer, "mobile": "123"},
+                {**new_customer, "id_number": "x"}, {**new_customer, "branch": ""}):
+        assert client.post("/api/chat/application", json=bad).status_code == 400
+
+
+def test_new_customer_gets_the_account_they_are_sanctioned(client, fake_bedrock):
+    fake_bedrock.scale_weight_g = 33.0
+    res = client.post("/api/chat/application", json={
+        "name": "Ravi Menon", "mobile": "90000 54321", "id_number": "5511 2233 4455",
+        "address": "4 MG Road, Bengaluru", "branch": "FED-BLR-011",
+    })
+    sid = res.json()["session"]["session_id"]
+    step(client, sid, "collateral", files=[("collateral_images", photo())])
+    weigh(client, sid, {"item-1": 10, "item-2": 11, "item-3": 12})
+    step(client, sid, "scale_photo", files=[("scale_image", photo("scale.png"))])
+    step(client, sid, "measure")
+    step(client, sid, "continue")  # damage -> valuation
+    step(client, sid, "continue")  # valuation -> document
+    step(client, sid, "document", files=[("documents", photo())], document_types=json.dumps(["Aadhaar Card"]))
+    _, _, s = step(client, sid, "report")
+
+    account = s["loan"]["account_number"]
+    assert s["report"]["recommendation"] == "PROCEED" and account.startswith("GLBLR")
+    # CBS now holds the loan account against that customer, so a renewal finds them by it.
+    assert start(client, account)["loan"]["customer_name"] == "Ravi Menon"
+
+
 def test_existing_loan_keeps_its_account(client):
     session = start(client, PRIYA)  # Renewal
     assert session["application"]["kind"] == "existing"

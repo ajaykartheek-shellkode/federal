@@ -16,7 +16,7 @@ const STEPS: { icon: IconName; title: string; text: string }[] = [
 ];
 
 export default function WelcomeHero() {
-  const { start, state } = useVerification();
+  const { start, openDialog, state } = useVerification();
   const [account, setAccount] = useState("");
 
   return (
@@ -54,6 +54,17 @@ export default function WelcomeHero() {
             Start verification
           </Button>
         </form>
+        <p className="mt-3 flex flex-wrap items-center gap-2 text-xs text-white/70">
+          Customer not in CBS yet?
+          <button
+            type="button"
+            onClick={() => openDialog({ kind: "new-customer" })}
+            disabled={!!state.busy}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-2.5 py-1 font-semibold text-white ring-1 ring-white/20 transition-colors hover:bg-white/20 disabled:opacity-50"
+          >
+            <Icon name="plus" size={13} /> Open an application for a new customer
+          </button>
+        </p>
       </motion.section>
 
       <motion.div variants={stagger(0.07, 0.1)} className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-5">

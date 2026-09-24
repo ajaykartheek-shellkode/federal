@@ -12,8 +12,13 @@ from typing import List, Optional
 
 from sqlalchemy import func, select
 
+from app import store
 from app.db import models as M
 from app.db.base import session_scope
+
+# A customer the branch onboards at the counter has no loan yet, so the application reference
+# stands in for the account number until one is issued.
+NEW_CUSTOMER_PREFIX = "APP-"
 
 
 def normalize_account(account: Optional[str]) -> str:
@@ -97,6 +102,42 @@ def fetch_customer(account_number: Optional[str] = None, strict: bool = False) -
         if cust is None:
             return None
         return _serialize(cust, _rate_table(db))
+
+
+def create_customer(
+    *,
+    name: str,
+    mobile: str,
+    id_number: str,
+    address: str,
+    branch: str,
+    application_no: str,
+) -> dict:
+    """Onboard a walk-in customer into CBS and return them in ``find_customer`` shape."""
+    with session_scope() as db:
+        cust = M.Customer(
+            account_number=application_no,  # replaced by the loan account once it is issued
+            customer_id=f"CBS{store.next_sequence('customer'):06d}",
+            customer_name=" ".join((name or "").split())[:200],
+            mobile=" ".join((mobile or "").split())[:24],
+            scenario="Fresh Loan",
+            branch=branch,
+            id_number=" ".join((id_number or "").split())[:64],
+            address=" ".join((address or "").split())[:500],
+        )
+        db.add(cust)
+        db.flush()
+        return _serialize(cust, _rate_table(db))
+
+
+def attach_account(customer_id: str, account_number: str) -> bool:
+    """Record the issued loan account against a customer onboarded at the counter."""
+    with session_scope() as db:
+        cust = db.scalar(select(M.Customer).where(M.Customer.customer_id == customer_id))
+        if cust is None or not (cust.account_number or "").startswith(NEW_CUSTOMER_PREFIX):
+            return False  # seeded customers keep the account they already have
+        cust.account_number = account_number
+        return True
 
 
 def sample_accounts(limit: int = 4) -> List[dict]:

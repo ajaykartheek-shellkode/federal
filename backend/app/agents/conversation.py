@@ -82,8 +82,9 @@ def draft(step: str, f: dict) -> str:
     """Deterministic, fact-exact assistant message for a workflow step."""
     if step == "welcome":
         if f.get("application_no"):
+            who = "new customer " if f.get("new_customer") else ""
             opened = (
-                f"Opened application <strong>{f['application_no']}</strong> for <strong>{f['customer']}</strong> at "
+                f"Opened application <strong>{f['application_no']}</strong> for {who}<strong>{f['customer']}</strong> at "
                 f"{f.get('branch') or 'this branch'} — the gold loan account is created once this verification is "
                 "recommended to proceed."
             )

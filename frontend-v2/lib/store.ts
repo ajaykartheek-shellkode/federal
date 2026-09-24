@@ -29,6 +29,7 @@ export type DialogState =
   | { kind: "document" }
   | { kind: "override"; target: OverrideTarget; ref: string }
   | { kind: "edit"; ref: string }
+  | { kind: "new-customer" }
   | { kind: "add-item" }
   | { kind: "remove-item"; ref: string }
   | { kind: "scale" }

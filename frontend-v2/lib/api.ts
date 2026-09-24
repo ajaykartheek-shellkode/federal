@@ -67,6 +67,18 @@ export interface StartResponse {
 
 export const startSession = (account: string) => request<StartResponse>("/api/chat/start", json("POST", { account }));
 
+export interface NewCustomer {
+  name: string;
+  mobile: string;
+  id_number: string;
+  address: string;
+  branch: string;
+}
+
+/** Open a gold loan application for a customer the branch is onboarding at the counter. */
+export const openApplicationFor = (customer: NewCustomer) =>
+  request<StartResponse>("/api/chat/application", json("POST", customer));
+
 export const getSession = (sessionId: string) =>
   request<{ session: SessionView }>(`/api/chat/session/${encodeURIComponent(sessionId)}`);
 

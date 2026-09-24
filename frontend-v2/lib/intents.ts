@@ -11,6 +11,7 @@ export type Intent =
   | { kind: "open"; dialog: "collateral" | "damage" | "document" | "scale-photo" }
   | { kind: "step"; action: "continue" | "report" | "measure" }
   | { kind: "show-items" }
+  | { kind: "new-customer" }
   | { kind: "ask"; question: string };
 
 const ACCOUNT = /^[A-Za-z]{0,4}\d[\w-]{5,}$/;
@@ -42,10 +43,16 @@ const MEASURE = oneOf(["measure", "assay", "fetch readings", "fetch", "get readi
 const SCALE_PHOTO = oneOf(["scale photo", "machine photo", "weighing machine", "weighing machine photo", "upload scale", "upload scale photo", "upload machine photo", "weigh total", "total weight"]);
 const UPLOAD_DOCS = oneOf(["upload", "upload document", "upload documents", "upload aadhaar", "add document", "upload id", "upload id proof", "upload kyc"]);
 
+const NEW_CUSTOMER = oneOf([
+  "new customer", "add customer", "onboard customer", "new client", "customer not in cbs", "not in cbs",
+  "new application", "open application", "walk in", "walk-in",
+]);
+
 export function parseIntent(raw: string, session: SessionView | null): Intent {
   const text = raw.trim();
   if (!session) {
     const compact = text.replace(/\s+/g, "");
+    if (NEW_CUSTOMER.test(normalize(text))) return { kind: "new-customer" };
     return ACCOUNT.test(compact) ? { kind: "start", account: compact } : { kind: "need-account" };
   }
 
