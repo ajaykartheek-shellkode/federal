@@ -243,7 +243,7 @@ async def _measure(ctx: StepContext) -> None:
     """One CaratMeter request for this loan application, covering every ornament id."""
     state, settings = ctx.state, ctx.settings
     loan = state["loan"]
-    branch, account = loan.get("branch", ""), loan.get("account_number", "")
+    branch, reference = loan.get("branch", ""), S.application_ref(state)
     if not state["inventory"]:
         raise S.WorkflowError("There are no ornaments to measure yet.")
     missing = S.unweighed_items(state)
@@ -254,7 +254,9 @@ async def _measure(ctx: StepContext) -> None:
     ex = ExecRun(ctx, "weight", STEPS.WEIGHT_STEPS)
     try:
         await ex.step("connect", caratmeter.status(branch))
-        payload = await ex.step("request", caratmeter.measure(branch, account, state["inventory"]))
+        payload = await ex.step(
+            "request", caratmeter.measure(branch, reference, state["inventory"], loan.get("customer_id", "")),
+        )
     except caratmeter.CaratMeterError as exc:
         await ctx.push_state()
         await ctx.emit("notice", {"level": "error", "text": str(exc)})
@@ -424,6 +426,10 @@ async def _report(ctx: StepContext) -> None:
     report = await ex.step("recommend", _value(S.build_report, state))
     state["report"] = report
     state["workflow_state"] = "done"
+    # A sanctioned application becomes a gold loan: the account number is issued here.
+    issued = None
+    if report["recommendation"] == "PROCEED" and S.is_fresh_application(state):
+        issued = await asyncio.to_thread(_issue_loan_account, state)
     await ex.step("render", asyncio.to_thread(_persist_report, state))
 
     warnings = sum(1 for r in report["reasons"] if r["level"] == "warn")
@@ -435,7 +441,15 @@ async def _report(ctx: StepContext) -> None:
     await ctx.say("report", {
         "report_id": report["report_id"], "recommendation": report["recommendation"], "warnings": warnings,
         "pledge_amount": report["stats"]["pledge_amount"],
+        "account_number": issued,
+        "application_no": state["loan"].get("application_no", ""),
+        "fresh": S.is_fresh_application(state),
     })
+
+
+def _issue_loan_account(state: dict) -> Optional[str]:
+    """Open the gold loan account for a sanctioned application (portal-issued running number)."""
+    return S.record_loan_account(state, store.next_account_number(state["loan"].get("branch", "")))
 
 
 def _persist_report(state: dict) -> None:

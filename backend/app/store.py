@@ -24,6 +24,39 @@ STATUSES = ("pass", "alert", "fail")
 _ASSET_ID = re.compile(r"^[0-9a-f]{32}$")
 
 
+# --------------------------------------------------------------------------- running numbers
+def next_sequence(name: str) -> int:
+    """The next number in a named series (loan applications, gold loan accounts)."""
+    with session_scope() as db:
+        row = db.get(M.Counter, name, with_for_update=True)
+        if row is None:
+            row = M.Counter(name=name, value=1)
+            db.add(row)
+        else:
+            row.value += 1
+        db.flush()
+        return row.value
+
+
+def _branch_code(branch: str) -> str:
+    """FED-MUM-001 → MUM; anything unusual falls back to the first letters."""
+    parts = [p for p in re.split(r"[^A-Za-z0-9]+", branch or "") if p.isalpha()]
+    code = (parts[1] if len(parts) > 1 else parts[0] if parts else "GEN").upper()
+    return code[:3]
+
+
+def next_application_no(branch: str = "") -> str:
+    """The reference a new gold loan application is opened under (APP-2026-00042)."""
+    year = date_cls.today().year
+    return f"APP-{year}-{next_sequence(f'application:{year}'):05d}"
+
+
+def next_account_number(branch: str) -> str:
+    """The gold loan account number issued when a verification is recommended to proceed."""
+    code = _branch_code(branch)
+    return f"GL{code}{next_sequence(f'account:{code}'):06d}"
+
+
 # --------------------------------------------------------------------------- assets
 def save_asset(data: bytes, content_type: str) -> str:
     """Persist bytes in the assets table; return the asset id."""

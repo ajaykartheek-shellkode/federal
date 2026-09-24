@@ -60,16 +60,32 @@ def weigh(client, sid, weights):
     return session
 
 
-def test_start_validates_account(client):
+def test_start_opens_an_application_for_a_fresh_loan(client):
     assert client.post("/api/chat/start", json={"account": "  "}).status_code == 400
     res = client.post("/api/chat/start", json={"account": "NOPE123"})
-    assert res.status_code == 404 and res.json()["samples"]
+    assert res.status_code == 404 and res.json()["samples"][0]["customer_id"]
+
     session = start(client, " gl2024001234 ")
-    assert session["loan"]["account_number"] == RAJESH
     assert session["ai_enabled"] is True
     assert session["inventory"] == []  # CBS supplies the customer, never the ornaments
     assert session["steps"] == ["collateral", "weight", "damage", "valuation", "document", "report"]
     assert "id_number" not in session["loan"]
+    # A fresh loan has no account yet: it runs under an application reference.
+    assert session["application"]["kind"] == "fresh"
+    assert session["application"]["reference"].startswith("APP-") and session["loan"]["account_number"] == ""
+    assert session["loan"]["application_no"] == session["application"]["reference"]
+
+    # The same customer can be found by CIF, mobile or ID proof — no loan account needed.
+    for query in ("CBS100234", "98200 41234", "2337 4600 1234"):
+        found = start(client, query)
+        assert found["loan"]["customer_name"] == "Rajesh Kumar"
+        assert found["application"]["reference"] != session["application"]["reference"]  # a new application each time
+
+
+def test_existing_loan_keeps_its_account(client):
+    session = start(client, PRIYA)  # Renewal
+    assert session["application"]["kind"] == "existing"
+    assert session["loan"]["account_number"] == PRIYA and session["loan"]["application_no"] == ""
 
 
 def test_full_happy_path_with_reports(client, fake_bedrock):
@@ -136,16 +152,20 @@ def test_full_happy_path_with_reports(client, fake_bedrock):
     assert s["workflow_state"] == "report"
     assert s["documents"]["items"][0]["status"] == "pass"
 
-    _, _, s = step(client, sid, "report")
+    _, events, s = step(client, sid, "report")
     assert s["workflow_state"] == "done"
     assert s["report"]["recommendation"] == "PROCEED", s["report"]["reasons"]
     assert s["report"]["report_id"].startswith("GLV-")
+    # Sanctioned: the gold loan account is opened for this application.
+    account = s["loan"]["account_number"]
+    assert account.startswith("GLMUM") and len(account) == 11 and s["loan"]["account_issued_at"]
+    assert s["loan"]["application_no"].startswith("APP-")  # the application it was opened under
 
     restored = client.get(f"/api/chat/session/{sid}").json()["session"]
     assert restored["report"]["report_id"] == s["report"]["report_id"]
 
-    account = client.get("/api/reports/account", params={"account": RAJESH.lower()}).json()
-    runs = [r for r in account["runs"] if r["session_id"] == sid]
+    report = client.get("/api/reports/account", params={"account": account}).json()
+    runs = [r for r in report["runs"] if r["session_id"] == sid]
     assert len(runs) == 1 and runs[0]["summary"]["recommendation"] == "PROCEED"
     assert runs[0]["summary"]["pledge_amount"] == s["stats"]["pledge_amount"]
 
@@ -403,7 +423,7 @@ def test_valuation_settings_are_validated_and_captured_per_session(client, fake_
 def test_mock_caratmeter_gateway(client):
     status = client.get("/api/integrations/caratmeter/v1/status", params={"branch": "FED-COK-006"}).json()
     assert status["device_id"] == "CM-FED-COK-006" and status["connected"] is True
-    body = {"branch": "FED-COK-006", "account_number": SURESH, "samples": [
+    body = {"branch": "FED-COK-006", "application": "APP-2026-00007", "customer_id": "CBS100098", "samples": [
         {"tag": "item-1", "material": "gold", "entered_weight_g": 18},
         {"tag": "item-2", "material": "gold", "entered_weight_g": 8},
     ]}
@@ -412,7 +432,7 @@ def test_mock_caratmeter_gateway(client):
     chain, pendant = first["measurements"]
     assert [m["net_weight_g"] for m in first["measurements"]] == [m["net_weight_g"] for m in second["measurements"]]
     assert abs(chain["net_weight_g"] - 18) <= 0.05 and 0 < chain["fineness_pct"] <= 100
-    assert 7.3 < pendant["net_weight_g"] < 7.45  # scripted finding for this demo account
+    assert 7.3 < pendant["net_weight_g"] < 7.45  # scripted finding for this demo customer
     assert client.post("/api/integrations/caratmeter/v1/measurements", json={"samples": [{"tag": ""}]}).status_code == 422
 
 

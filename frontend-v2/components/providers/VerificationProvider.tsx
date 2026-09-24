@@ -25,7 +25,8 @@ import { WORKFLOW_STEPS } from "@/lib/format";
 
 const STORAGE_KEY = "glportal.session";
 const WELCOME =
-  "Welcome to <strong>GL Portal</strong>. Enter the customer's <strong>loan account number</strong> and I'll pull their gold-loan details from CBS.";
+  "Welcome to <strong>GL Portal</strong>. Enter the customer's <strong>CIF, mobile or ID number</strong> — or an existing " +
+  "loan account — and I'll open the verification from CBS.";
 
 interface VerificationApi {
   state: AppState;
@@ -261,7 +262,10 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
           return start(intent.account);
         case "need-account":
           dispatch({ type: "user", text: trimmed });
-          bot("Please enter a valid <strong>loan account number</strong> to begin (for example, GL2024001234).");
+          bot(
+            "Please enter the customer's <strong>CIF, mobile or ID number</strong> — or an existing loan account — to begin " +
+              "(for example, CBS100234, 98200 41234 or GL2024001234)."
+          );
           return;
         case "open":
           dispatch({ type: "user", text: trimmed });

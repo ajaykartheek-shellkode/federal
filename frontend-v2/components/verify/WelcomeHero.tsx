@@ -8,11 +8,11 @@ import Icon, { type IconName } from "@/components/ui/Icon";
 import { fadeUp, stagger } from "@/lib/motion";
 
 const STEPS: { icon: IconName; title: string; text: string }[] = [
-  { icon: "camera", title: "Collateral photos", text: "Ornaments photographed on the weighing scale; quality checks and every item cross-verified with CBS" },
-  { icon: "weighScale", title: "Weight & purity", text: "CaratMeter weight and XRF purity per item, reconciled with the scale and CBS; pledge amount computed" },
+  { icon: "camera", title: "Collateral photos", text: "Every ornament in the photo becomes a line on the pledge list, cropped and named" },
+  { icon: "weighScale", title: "Weight & purity", text: "You weigh each ornament, the machine photo gives the total, and the CaratMeter assays every piece" },
   { icon: "alert", title: "Damage assessment", text: "Close-ups compared with the recorded damage description" },
   { icon: "idCard", title: "Document verification", text: "OCR and name, ID and address match against the CBS record" },
-  { icon: "doc", title: "Verification report", text: "Recommendation, audit trail and e-signatures in one document" },
+  { icon: "doc", title: "Report & account", text: "Recommendation, audit trail and e-signatures — and the gold loan account on sanction" },
 ];
 
 export default function WelcomeHero() {
@@ -30,8 +30,8 @@ export default function WelcomeHero() {
           Verify gold loan collateral with <span className="text-gold-400">confidence</span>.
         </h1>
         <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-white/75">
-          The Verification Agent pulls the pledged inventory from CBS and checks every photo and document as you capture it.
-          Findings are advisory, and every override is audited.
+          Find the customer, and the Verification Agent opens a loan application: the collateral photo builds the pledge
+          list, you weigh each ornament, the CaratMeter assays it, and the gold loan account is opened on sanction.
         </p>
         <form
           className="mt-7 flex max-w-lg flex-wrap items-center gap-2 rounded-2xl bg-white/10 p-2 ring-1 ring-white/15 backdrop-blur"
@@ -46,8 +46,8 @@ export default function WelcomeHero() {
           <input
             value={account}
             onChange={(e) => setAccount(e.target.value)}
-            placeholder="Loan account number, e.g. GL2024001234"
-            aria-label="Loan account number"
+            placeholder="CIF, mobile or ID number — or an existing loan account"
+            aria-label="Customer CIF, mobile, ID number or loan account"
             className="h-11 min-w-0 flex-1 bg-transparent text-[15px] text-white outline-none placeholder:text-white/45"
           />
           <Button type="submit" variant="gold" size="lg" iconRight="arrowRight" loading={state.busy === "start"} disabled={!account.trim() || !!state.busy}>

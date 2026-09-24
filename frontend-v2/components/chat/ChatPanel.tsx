@@ -91,8 +91,8 @@ export default function ChatPanel() {
             onChange={(e) => setText(e.target.value)}
             maxLength={500}
             disabled={state.busy === "restore"}
-            placeholder={session ? "Ask a question or type a reply…" : "Enter loan account number…"}
-            aria-label={session ? "Message the Verification Agent" : "Loan account number"}
+            placeholder={session ? "Ask a question or type a reply…" : "CIF, mobile, ID number or loan account…"}
+            aria-label={session ? "Message the Verification Agent" : "Customer CIF, mobile, ID number or loan account"}
             className="h-9 min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-faint"
           />
           <motion.button

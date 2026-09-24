@@ -22,6 +22,7 @@ def _orn(ref, name, carat, weight, qty=1, dmg=False, dcount=0, ddetails="", dpct
 CUSTOMERS = [
     {
         "account_number": "GL2024001234",
+        "mobile": "98200 41234",
         "customer_id": "CBS100234",
         "customer_name": "Rajesh Kumar",
         "scenario": "Fresh Loan",
@@ -43,6 +44,7 @@ CUSTOMERS = [
     },
     {
         "account_number": "10056100070317",
+        "mobile": "99458 70317",
         "customer_id": "23374600",
         "customer_name": "CIUQXGZGZXFZ D M",
         "scenario": "Fresh Loan",
@@ -55,6 +57,7 @@ CUSTOMERS = [
     },
     {
         "account_number": "GL2024001189",
+        "mobile": "98111 55190",
         "customer_id": "CBS100189",
         "customer_name": "Priya Sharma",
         "scenario": "Renewal",
@@ -69,6 +72,7 @@ CUSTOMERS = [
     },
     {
         "account_number": "GL2024001156",
+        "mobile": "99099 41156",
         "customer_id": "CBS100156",
         "customer_name": "Arjun Patel",
         "scenario": "Fresh Loan",
@@ -85,6 +89,7 @@ CUSTOMERS = [
     },
     {
         "account_number": "GL2024001142",
+        "mobile": "90000 21142",
         "customer_id": "CBS100142",
         "customer_name": "Meena Devi",
         "scenario": "Security Operations",
@@ -98,6 +103,7 @@ CUSTOMERS = [
     },
     {
         "account_number": "GL2024001098",
+        "mobile": "94470 31098",
         "customer_id": "CBS100098",
         "customer_name": "Suresh Nair",
         "scenario": "Fresh Loan",
@@ -115,6 +121,7 @@ CUSTOMERS = [
     },
     {
         "account_number": "GL2024001067",
+        "mobile": "98400 61067",
         "customer_id": "CBS100067",
         "customer_name": "Kavitha Rao",
         "scenario": "Renewal",
@@ -128,6 +135,7 @@ CUSTOMERS = [
     },
     {
         "account_number": "GL2024001210",
+        "mobile": "94950 41210",
         "customer_id": "CBS100210",
         "customer_name": "Lakshmi Iyer",
         "scenario": "Fresh Loan",

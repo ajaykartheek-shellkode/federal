@@ -72,7 +72,9 @@ export const getSession = (sessionId: string) =>
 
 export interface SessionSummary {
   session_id: string;
+  /** The loan account, or the application reference while the loan is not yet opened. */
   account_number: string;
+  reference?: string;
   customer_name: string;
   scenario: string;
   workflow_state: string;

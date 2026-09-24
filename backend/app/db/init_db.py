@@ -32,6 +32,9 @@ _MIGRATIONS = [
     "ALTER TABLE settings ADD COLUMN IF NOT EXISTS weight_tolerance_g DOUBLE PRECISION NOT NULL DEFAULT 0.1",
     "ALTER TABLE settings ADD COLUMN IF NOT EXISTS purity_tolerance_pct DOUBLE PRECISION NOT NULL DEFAULT 0.5",
     "ALTER TABLE settings ADD COLUMN IF NOT EXISTS damage_deduction VARCHAR(16) NOT NULL DEFAULT 'tenths'",
+    "ALTER TABLE customers ADD COLUMN IF NOT EXISTS mobile VARCHAR(24) NOT NULL DEFAULT ''",
+    "CREATE INDEX IF NOT EXISTS ix_customers_mobile ON customers (mobile)",
+    "CREATE INDEX IF NOT EXISTS ix_customers_customer_id ON customers (customer_id)",
 ]
 
 
@@ -62,11 +65,14 @@ def seed() -> dict:
                     existing.id_number = c["id_number"]
                     existing.address = c.get("address", existing.address)
                     added["kyc_backfilled"] += 1
+                if not existing.mobile and c.get("mobile"):
+                    existing.mobile = c["mobile"]
                 continue
             cust = M.Customer(
                 account_number=c["account_number"],
                 customer_id=c["customer_id"],
                 customer_name=c["customer_name"],
+                mobile=c.get("mobile", ""),
                 scenario=c["scenario"],
                 branch=c["branch"],
                 id_number=c.get("id_number", ""),

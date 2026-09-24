@@ -28,7 +28,9 @@ class Sample(BaseModel):
 
 class MeasureBody(BaseModel):
     branch: str = Field(default="", max_length=32)
-    account_number: str = Field(default="", max_length=64)
+    application: str = Field(default="", max_length=64)  # loan application reference
+    customer_id: str = Field(default="", max_length=64)
+    account_number: str = Field(default="", max_length=64)  # accepted for older callers
     samples: List[Sample] = Field(default_factory=list, max_length=100)
 
 
@@ -39,4 +41,5 @@ async def status(branch: str = Query("", max_length=32)):
 
 @router.post("/measurements")
 async def measurements(body: MeasureBody):
-    return caratmeter.simulate_measurements(body.branch, body.account_number, [s.model_dump() for s in body.samples])
+    reference = body.application or body.account_number
+    return caratmeter.simulate_measurements(body.branch, reference, [s.model_dump() for s in body.samples], body.customer_id)

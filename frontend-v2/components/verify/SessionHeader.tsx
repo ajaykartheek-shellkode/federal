@@ -43,7 +43,14 @@ export default function SessionHeader({ session }: { session: SessionView }) {
             <p className="text-2xs font-semibold uppercase tracking-[0.16em] text-gold-300">CBS customer</p>
             <h2 className="truncate text-2xl font-bold text-white">{loan.customer_name}</h2>
             <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-white/70">
-              <span className="font-mono">A/c {loan.account_number}</span>
+              {loan.application_no && (
+                <span className="font-mono" title="Loan application reference">
+                  Appl {loan.application_no}
+                </span>
+              )}
+              <span className="font-mono" title={loan.account_number ? "Gold loan account" : "Opened once the verification is recommended to proceed"}>
+                A/c {loan.account_number || "on sanction"}
+              </span>
               <span className="font-mono">CIF {loan.customer_id}</span>
               {loan.branch && <span>Branch {loan.branch}</span>}
               {loan.id_number_masked && <span className="font-mono">ID {loan.id_number_masked}</span>}

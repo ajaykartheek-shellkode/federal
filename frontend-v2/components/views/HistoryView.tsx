@@ -81,7 +81,7 @@ export default function HistoryView() {
                       <li key={o.session_id} className="flex items-center gap-4 px-5 py-3">
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-semibold text-ink">
-                            {o.customer_name} <span className="font-mono text-xs font-normal text-ink-muted">· {o.account_number}</span>
+                            {o.customer_name} <span className="font-mono text-xs font-normal text-ink-muted">· {o.account_number || "new application"}</span>
                           </p>
                           <p className="text-xs text-ink-muted">
                             {o.scenario} · at {step.toLowerCase()} · updated {formatDateTime(o.updated_at)}

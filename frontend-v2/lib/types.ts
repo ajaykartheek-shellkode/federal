@@ -10,13 +10,24 @@ export type MeasurementStatus = "pending" | "match" | "weight_mismatch" | "ungra
 export type Severity = "minor" | "moderate" | "severe";
 
 export interface Loan {
+  /** Empty for a fresh application until the verification is recommended to proceed. */
   account_number: string;
+  /** The reference a fresh loan is opened under; empty for an existing loan. */
+  application_no: string;
+  account_issued_at: string;
   customer_id: string;
   customer_name: string;
+  mobile?: string;
   scenario: string;
   branch: string;
   id_number_masked: string;
   has_address: boolean;
+}
+
+export interface Application {
+  reference: string;
+  kind: "fresh" | "existing";
+  opened_at?: string;
 }
 
 export interface Measurement {
@@ -263,6 +274,8 @@ export interface Gate {
 export interface SessionView {
   session_id: string;
   workflow_state: WorkflowState;
+  /** The loan application this verification runs under (or the existing account). */
+  application: Application;
   /** The steps this session runs (sessions created before the weight step skip it). */
   steps: Exclude<WorkflowState, "done">[];
   ai_enabled: boolean;
@@ -399,6 +412,8 @@ export interface OverviewReport {
 
 export interface SampleAccount {
   account_number: string;
+  customer_id?: string;
+  mobile?: string;
   customer_name: string;
   scenario: string;
 }

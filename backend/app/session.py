@@ -85,7 +85,9 @@ def save(state: dict, audit_entry: Optional[dict] = None) -> None:
 
 def _apply(row: M.WorkSession, state: dict) -> None:
     loan = state.get("loan") or {}
-    row.account_number = loan.get("account_number", "")
+    # Until a fresh application is sanctioned there is no account number: file it under the
+    # application reference so history and reporting can still find it.
+    row.account_number = loan.get("account_number") or loan.get("application_no", "")
     row.customer_id = loan.get("customer_id", "")
     row.customer_name = loan.get("customer_name", "")
     row.scenario = loan.get("scenario", "")
@@ -106,6 +108,7 @@ def list_recent(limit: int = 20, open_only: bool = True) -> List[dict]:
             {
                 "session_id": r.id,
                 "account_number": r.account_number,
+                "reference": r.account_number,
                 "customer_name": r.customer_name,
                 "scenario": r.scenario,
                 "workflow_state": r.workflow_state,

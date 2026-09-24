@@ -27,14 +27,27 @@ def _uuid() -> str:
     return uuid.uuid4().hex
 
 
+# --------------------------------------------------------------------------- counters
+class Counter(Base):
+    """Running numbers the portal issues: loan applications, and gold loan accounts on sanction."""
+
+    __tablename__ = "counters"
+
+    name: Mapped[str] = mapped_column(String(40), primary_key=True)
+    value: Mapped[int] = mapped_column(Integer, default=0)
+
+
 # --------------------------------------------------------------------------- CBS reference
 class Customer(Base):
     __tablename__ = "customers"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # For a fresh application there is no gold loan yet: the assessor finds the customer by CIF,
+    # mobile or ID proof. Existing loans (renewal, release) are still found by account number.
     account_number: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    customer_id: Mapped[str] = mapped_column(String(64))
+    customer_id: Mapped[str] = mapped_column(String(64), index=True)
     customer_name: Mapped[str] = mapped_column(String(200))
+    mobile: Mapped[str] = mapped_column(String(24), default="", index=True)
     scenario: Mapped[str] = mapped_column(String(64), default="Fresh Loan")
     branch: Mapped[str] = mapped_column(String(120), default="")
     # KYC details for cross-verification against uploaded proofs.

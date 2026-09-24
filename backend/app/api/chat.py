@@ -1,6 +1,7 @@
 """Conversational verification API (frontend-v2).
 
-  POST /api/chat/start                {account}                  -> {session, message}
+  POST /api/chat/start                {account}   account no., CIF, mobile or ID proof
+                                                                 -> {session, message}
   GET  /api/chat/session/{id}                                    -> {session}
   GET  /api/chat/sessions?open_only=true&limit=20                -> {sessions}
   POST /api/chat/step                 multipart (see below)      -> text/event-stream
@@ -32,6 +33,7 @@ from pydantic import BaseModel, Field
 
 from app import cbs
 from app import session as session_store
+from app import store
 from app.agents import conversation
 from app.agents.assets import Asset
 from app.bedrock import blocks as B
@@ -79,25 +81,31 @@ class StartBody(BaseModel):
 
 @router.post("/start")
 async def start(body: StartBody):
-    account = cbs.normalize_account(body.account)
-    if not account:
-        return ApiError(400, "Please enter a loan account number.").response()
+    """Open a verification: a new application for a fresh loan, or an existing loan account."""
+    query = (body.account or "").strip()
+    if not query:
+        return ApiError(400, "Enter the customer's CIF, mobile or ID number — or an existing loan account.").response()
 
-    customer = await asyncio.to_thread(cbs.fetch_customer, account, True)
+    customer = await asyncio.to_thread(cbs.find_customer, query)
     if customer is None:
         samples = await asyncio.to_thread(cbs.sample_accounts)
-        return ApiError(404, f"No gold-loan account {account} was found in CBS.", samples=samples).response()
+        return ApiError(404, f"No customer matching '{query}' was found in CBS.", samples=samples).response()
 
     settings = await asyncio.to_thread(get_settings)
     loan = customer["loan_context"]
     ai_enabled = settings.is_enabled_for(loan.get("scenario", ""))
-    state = S.new_state(customer, ai_enabled, settings.blocker_mode, settings.valuation_snapshot())
+    # A fresh loan has no account yet, so the portal opens an application for it.
+    fresh = loan.get("scenario", "") == "Fresh Loan"
+    application_no = await asyncio.to_thread(store.next_application_no, loan.get("branch", "")) if fresh else ""
+    state = S.new_state(customer, ai_enabled, settings.blocker_mode, settings.valuation_snapshot(), application_no)
     await asyncio.to_thread(session_store.create, state)
 
     message = await conversation.guidance("welcome", {
         "customer": loan.get("customer_name", ""),
         "scenario": loan.get("scenario", ""),
         "branch": loan.get("branch", ""),
+        "application_no": application_no,
+        "account_number": "" if fresh else loan.get("account_number", ""),
         "ai_enabled": ai_enabled,
     }, ai_enabled)
     return {"session": S.view(state, settings), "message": message}
@@ -327,6 +335,7 @@ def _qa_context(v: dict) -> dict:
     report = v.get("report") or {}
     return {
         "loan": v["loan"],
+        "application": v.get("application"),
         "step": v["workflow_state"],
         "ai_enabled": v["ai_enabled"],
         "stats": v["stats"],

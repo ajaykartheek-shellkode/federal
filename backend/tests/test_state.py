@@ -88,6 +88,21 @@ def listed(st):
 
 
 # --------------------------------------------------------------------------- creation & collateral
+def test_an_application_is_opened_for_a_fresh_loan():
+    fresh = S.new_state(customer(), ai_enabled=True, application_no="APP-2026-00042")
+    assert fresh["application"] == {"reference": "APP-2026-00042", "kind": "fresh", "opened_at": fresh["application"]["opened_at"]}
+    assert fresh["loan"]["application_no"] == "APP-2026-00042" and fresh["loan"]["account_number"] == ""
+    assert S.is_fresh_application(fresh) and S.application_ref(fresh) == "APP-2026-00042"
+
+    assert S.record_loan_account(fresh, "GLMUM000012") == "GLMUM000012"
+    assert fresh["loan"]["account_number"] == "GLMUM000012" and fresh["loan"]["account_issued_at"]
+    assert S.record_loan_account(fresh, "GLMUM000013") is None  # never re-issued
+
+    existing = S.new_state(customer(), ai_enabled=True)
+    assert existing["application"]["kind"] == "existing" and not S.is_fresh_application(existing)
+    assert S.application_ref(existing) == "GL1"
+
+
 def test_new_state_holds_no_cbs_inventory(st):
     assert st["workflow_state"] == "collateral"
     assert st["inventory"] == [] and st["next_ref"] == 1

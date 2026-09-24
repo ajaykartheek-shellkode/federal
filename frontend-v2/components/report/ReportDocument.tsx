@@ -121,13 +121,22 @@ export default function ReportDocument({ session }: { session: SessionView }) {
       <Section n={next()} title="Customer & loan">
         <div className="grid grid-cols-2 gap-x-8 gap-y-1.5">
           <KV k="Customer" v={loan.customer_name} />
-          <KV k="Loan account" v={loan.account_number} mono />
+          <KV
+            k={loan.application_no ? "Application" : "Loan account"}
+            v={loan.application_no || loan.account_number}
+            mono
+          />
           <KV k="Customer ID" v={loan.customer_id} mono />
           <KV k="Scenario" v={loan.scenario} />
           <KV k="Branch" v={loan.branch} />
-          <KV k="AI validation" v={session.ai_enabled ? "Enabled" : "Disabled (manual)"} />
-          <KV k="Pledge amount" v={`${formatINR(pledge)}${valuation?.totals.is_estimate ? " (estimate)" : ""}`} />
+          {loan.application_no ? (
+            <KV k="Gold loan a/c" v={loan.account_number || "Opened on approval"} mono />
+          ) : (
+            <KV k="AI validation" v={session.ai_enabled ? "Enabled" : "Disabled (manual)"} />
+          )}
+          <KV k="Pledge amount" v={`${formatINR(pledge)}${valuation?.totals.is_estimate ? " (provisional)" : ""}`} />
           <KV k="Mode" v={session.settings.blocker_mode ? "Blocker" : "Alert"} />
+          {loan.application_no && <KV k="AI validation" v={session.ai_enabled ? "Enabled" : "Disabled (manual)"} />}
         </div>
       </Section>
 

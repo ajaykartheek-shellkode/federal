@@ -4,7 +4,9 @@ Pure functions only (no I/O, no model calls) so the whole workflow is unit-testa
 state creation, allowed actions, blocker gates, overrides/edits, the final
 recommendation, the reporting run record and the client-facing view.
 
-The journey (v5). CBS supplies the customer and KYC only — never an inventory:
+The journey (v5). A fresh gold loan starts as an APPLICATION — there is no loan account until the
+verification is recommended to proceed, and CBS supplies the customer and KYC only, never an
+inventory:
     1. collateral  the assessor photographs the ornaments; the agent detects and crops each one
                    and THAT becomes the inventory (editable: rename, weigh, add, remove)
     2. weight      a weight is entered per item, the weighing-machine photo gives the total, and
@@ -16,7 +18,9 @@ The journey (v5). CBS supplies the customer and KYC only — never an inventory:
 
 Session document (JSON):
     session_id, version, rev, created_at, workflow_state, ai_enabled, blocker_mode, next_ref
-    loan         {account_number, customer_id, customer_name, scenario, branch, id_number, address}
+    loan         {application_no, account_number (issued on PROCEED), account_issued_at, customer_id,
+                  customer_name, mobile, scenario, branch, id_number, address}
+    application  {reference, kind: fresh|existing, opened_at}
     valuation    {materials, weight_tolerance_g, purity_tolerance_pct, damage_deduction}  # captured at start
     inventory    [{id, name, material, carat, weight_gm, quantity, damage_percent, origin, status,
                    thumb_asset_id, source_image, measurement, measurement_status, measurement_overridden}]
@@ -177,13 +181,27 @@ def next_state(state: dict, current: str) -> Optional[str]:
 
 
 # --------------------------------------------------------------------------- creation
-def new_state(customer: dict, ai_enabled: bool, blocker_mode: bool = False, valuation: Optional[dict] = None) -> dict:
-    """Build a fresh session from a CBS customer record (``cbs.fetch_customer`` shape).
+def new_state(
+    customer: dict,
+    ai_enabled: bool,
+    blocker_mode: bool = False,
+    valuation: Optional[dict] = None,
+    application_no: str = "",
+) -> dict:
+    """Build a fresh session from a CBS customer record (``cbs.find_customer`` shape).
 
     Only the customer and KYC details are taken: the pledged inventory is built later from the
-    collateral photo. AI validation, the enforcement mode and the valuation table are captured
-    here so a settings change never alters a verification already in progress.
+    collateral photo. A fresh loan is opened under ``application_no`` and carries no account number
+    until the report recommends PROCEED; a renewal or release keeps the account it already has.
+    AI validation, the enforcement mode and the valuation table are captured here so a settings
+    change never alters a verification already in progress.
     """
+    loan = dict(customer["loan_context"])
+    fresh = bool(application_no)
+    loan["application_no"] = application_no
+    loan["account_issued_at"] = ""
+    if fresh:
+        loan["account_number"] = ""  # issued when the verification is recommended to proceed
     return {
         "session_id": None,
         "version": VERSION,
@@ -192,7 +210,12 @@ def new_state(customer: dict, ai_enabled: bool, blocker_mode: bool = False, valu
         "workflow_state": "collateral",
         "ai_enabled": bool(ai_enabled),
         "blocker_mode": bool(blocker_mode),
-        "loan": dict(customer["loan_context"]),
+        "loan": loan,
+        "application": {
+            "reference": application_no or loan.get("account_number", ""),
+            "kind": "fresh" if fresh else "existing",
+            "opened_at": now_iso(),
+        },
         "valuation": valuation or default_valuation(),
         "next_ref": 1,
         "inventory": [],
@@ -263,6 +286,27 @@ def new_item(
         "measurement_status": "pending",
         "measurement_overridden": False,
     }
+
+
+def is_fresh_application(state: dict) -> bool:
+    """True while this is a new application rather than a verification of an existing loan."""
+    return (state.get("application") or {}).get("kind") == "fresh"
+
+
+def application_ref(state: dict) -> str:
+    """What this verification is keyed on — the application reference, or the existing account."""
+    loan = state["loan"]
+    return loan.get("application_no") or loan.get("account_number", "")
+
+
+def record_loan_account(state: dict, account_number: str) -> Optional[str]:
+    """Attach the gold loan account issued on sanction. Ignored if one is already on file."""
+    loan = state["loan"]
+    if loan.get("account_number") or not account_number:
+        return None
+    loan["account_number"] = account_number
+    loan["account_issued_at"] = now_iso()
+    return account_number
 
 
 # --------------------------------------------------------------------------- queries
@@ -1161,6 +1205,7 @@ def view(state: dict, settings) -> dict:
         "session_id": state["session_id"],
         "workflow_state": state["workflow_state"],
         "steps": steps_of(state),
+        "application": state.get("application") or {"reference": loan.get("account_number", ""), "kind": "existing"},
         "ai_enabled": state.get("ai_enabled", True),
         "loan": loan,
         "inventory": state["inventory"],

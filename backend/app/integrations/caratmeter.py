@@ -46,10 +46,11 @@ MOCK_MAX_S = 2.4
 GOLD_FINENESS = ((0.58, 91.6), (0.74, 99.9), (0.88, 75.0), (1.01, 83.3))
 SILVER_FINENESS = ((0.75, 92.5), (1.01, 99.9))
 
-# Scripted findings for demo accounts (account → ornament id → overrides), so a demo can show a
+# Scripted findings for demo customers (CIF → ornament id → overrides), so a demo can show a
 # weight that disagrees with the counter, a lower assay, and metal below every configured grade.
+# Keyed on the customer, so they show up whichever application is being verified.
 MOCK_DISCREPANCIES: Dict[str, Dict[str, dict]] = {
-    "GL2024001098": {  # Suresh Nair
+    "CBS100098": {  # Suresh Nair
         "item-2": {"weight_delta_g": -0.62},
         "item-4": {"fineness_pct": 84.1},
         "item-6": {"fineness_pct": 41.8},
@@ -94,15 +95,15 @@ def _assay(seed: str, material: str) -> float:
     return next(value for edge, value in table if roll < edge)
 
 
-def simulate_measurements(branch: str, account_number: str, samples: List[dict]) -> dict:
+def simulate_measurements(branch: str, application: str, samples: List[dict], customer_id: str = "") -> dict:
     """Readings a calibrated analyser would return for this application's ornaments."""
-    scripted = MOCK_DISCREPANCIES.get((account_number or "").upper(), {})
+    scripted = MOCK_DISCREPANCIES.get((customer_id or "").upper(), {})
     measurements = []
     for i, sample in enumerate(samples):
         tag = str(sample.get("tag", f"sample-{i + 1}"))
         material = str(sample.get("material", "gold"))
         entered_weight = float(sample.get("entered_weight_g") or sample.get("declared_weight_g") or 0)
-        seed = f"{account_number}:{tag}"
+        seed = f"{application}:{tag}"
         weight = entered_weight + _noise(seed + ":w", 0.03)
         fineness = _assay(seed, material) + _noise(seed + ":f", 0.12)
         extra = scripted.get(tag, {})
@@ -135,13 +136,13 @@ def _samples(inventory: List[dict]) -> List[dict]:
     ]
 
 
-async def measure(branch: str, account_number: str, inventory: List[dict]) -> dict:
+async def measure(branch: str, application: str, inventory: List[dict], customer_id: str = "") -> dict:
     """One request for this loan application; returns the gateway payload ({device, measurements})."""
     samples = _samples(inventory)
     if config.CARATMETER_MODE != "http":
         # A real analyser takes a moment per sample; keep the mock believable but quick.
         await asyncio.sleep(min(MOCK_MAX_S, MOCK_BASE_S + MOCK_PER_SAMPLE_S * len(samples)))
-        return simulate_measurements(branch, account_number, samples)
+        return simulate_measurements(branch, application, samples, customer_id)
 
     import httpx
 
@@ -149,7 +150,7 @@ async def measure(branch: str, account_number: str, inventory: List[dict]) -> di
         async with httpx.AsyncClient(base_url=config.CARATMETER_BASE_URL, timeout=config.CARATMETER_TIMEOUT_S) as client:
             res = await client.post(
                 "/v1/measurements",
-                json={"branch": branch, "account_number": account_number, "samples": samples},
+                json={"branch": branch, "application": application, "customer_id": customer_id, "samples": samples},
                 headers={"X-API-Key": config.CARATMETER_API_KEY} if config.CARATMETER_API_KEY else {},
             )
             res.raise_for_status()

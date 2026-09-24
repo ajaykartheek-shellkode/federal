@@ -321,18 +321,23 @@ def _customer(view: dict) -> Table:
     valuation = view["report"].get("valuation") or view.get("valuation") or {}
     totals = valuation.get("totals") or {}
     pledge = inr(totals.get("pledge_amount", stats.get("pledge_amount", 0))) + (" (estimate)" if totals.get("is_estimate") else "")
+    application = loan.get("application_no", "")
     pairs = [
         ("Customer", loan.get("customer_name", "")),
-        ("Loan account", loan.get("account_number", "")),
+        ("Application" if application else "Loan account", application or loan.get("account_number", "")),
         ("Customer ID", loan.get("customer_id", "")),
         ("Scenario", loan.get("scenario", "")),
         ("Branch", loan.get("branch", "")),
-        ("ID proof", loan.get("id_number_masked", "") or "-"),
+        # A sanctioned application shows the account it opened; otherwise the ID proof sits here.
+        ("Gold loan a/c", loan.get("account_number") or "Opened on approval") if application
+        else ("ID proof", loan.get("id_number_masked", "") or "-"),
         ("Pledge amount", pledge),
         ("AI validation", "Enabled" if view.get("ai_enabled", True) else "Disabled (manual)"),
         ("Enforcement", "Blocker" if view["settings"]["blocker_mode"] else "Alert"),
         ("Generated", _date(view["report"]["generated_at"])),
     ]
+    if application:
+        pairs.append(("ID proof", loan.get("id_number_masked", "") or "-"))
     rows = []
     for i in range(0, len(pairs), 2):
         left_k, left_v = pairs[i]

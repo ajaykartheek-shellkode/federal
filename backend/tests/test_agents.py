@@ -164,9 +164,19 @@ def test_journey_drafts_are_fact_exact():
 
 
 def test_guidance_drafts_carry_the_next_action():
-    welcome = conversation.draft("welcome", {"customer": "Rajesh Kumar", "scenario": "Fresh Loan", "branch": "FED-MUM-001", "ai_enabled": True})
-    assert "Rajesh Kumar" in welcome and "up to 3 photos" in welcome
-    assert "REVIEW" in conversation.draft("report", {"report_id": "GLV-1", "recommendation": "REVIEW", "warnings": 2})
+    welcome = conversation.draft("welcome", {"customer": "Rajesh Kumar", "scenario": "Fresh Loan", "branch": "FED-MUM-001",
+                                             "application_no": "APP-2026-00042", "ai_enabled": True})
+    assert "APP-2026-00042" in welcome and "Rajesh Kumar" in welcome and "up to 3 photos" in welcome
+    assert "recommended to proceed" in welcome  # the account comes later
+    renewal = conversation.draft("welcome", {"customer": "Priya Sharma", "scenario": "Renewal", "branch": "FED-DEL-007",
+                                             "account_number": "GL2024001189", "ai_enabled": True})
+    assert "GL2024001189" in renewal and "application" not in renewal.lower()
+
+    sanctioned = conversation.draft("report", {"report_id": "GLV-1", "recommendation": "PROCEED", "pledge_amount": 548730,
+                                               "account_number": "GLMUM000012", "application_no": "APP-2026-00042", "fresh": True})
+    assert "GLMUM000012" in sanctioned and "APP-2026-00042" in sanctioned
+    review = conversation.draft("report", {"report_id": "GLV-1", "recommendation": "REVIEW", "warnings": 2, "fresh": True})
+    assert "REVIEW" in review and "No gold loan account is opened yet" in review
     assert "weighing-machine photo" in conversation.draft("continue", {"to": "weight"})
     assert "pledge valuation" in conversation.draft("continue", {"to": "valuation"})
 

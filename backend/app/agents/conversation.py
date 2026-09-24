@@ -28,7 +28,7 @@ class _Reply(BaseModel):
 
 
 JOURNEY = (
-    'THE JOURNEY (follow it exactly; never invent a different order): 1) the assessor photographs all pledged ornaments together and the Collateral agent detects each piece — those detections ARE the inventory, and the assessor can rename, add or remove rows; 2) the assessor types the weight of each ornament, uploads a photo of the weighing machine for the total, and one CaratMeter request per loan application returns the purity of every ornament; 3) damage is photographed with a damage percentage; 4) the pledge amount is reviewed; 5) identity documents are cross-verified against the CBS customer record; 6) the report is generated. CBS provides only the customer and KYC details — never an inventory, weight or purity.'
+    'THE JOURNEY (follow it exactly; never invent a different order): 1) the assessor photographs all pledged ornaments together and the Collateral agent detects each piece — those detections ARE the inventory, and the assessor can rename, add or remove rows; 2) the assessor types the weight of each ornament, uploads a photo of the weighing machine for the total, and one CaratMeter request per loan application returns the purity of every ornament; 3) damage is photographed with a damage percentage; 4) the pledge amount is reviewed; 5) identity documents are cross-verified against the CBS customer record; 6) the report is generated. CBS provides only the customer and KYC details — never an inventory, weight or purity. A fresh loan runs under a loan APPLICATION reference and has no gold loan account number until the report recommends PROCEED, at which point the account is created; a renewal or release verifies a loan account that already exists.'
 )
 
 
@@ -81,9 +81,19 @@ def _grams(value) -> str:
 def draft(step: str, f: dict) -> str:
     """Deterministic, fact-exact assistant message for a workflow step."""
     if step == "welcome":
+        if f.get("application_no"):
+            opened = (
+                f"Opened application <strong>{f['application_no']}</strong> for <strong>{f['customer']}</strong> at "
+                f"{f.get('branch') or 'this branch'} — the gold loan account is created once this verification is "
+                "recommended to proceed."
+            )
+        else:
+            opened = (
+                f"Loaded <strong>{f['customer']}</strong> from CBS — {f.get('scenario', 'gold loan')} on account "
+                f"<strong>{f.get('account_number') or 'on file'}</strong>."
+            )
         base = (
-            f"Loaded <strong>{f['customer']}</strong> from CBS — {f.get('scenario', 'gold loan')} at "
-            f"{f.get('branch') or 'this branch'}. Place <strong>all pledged ornaments together</strong> on a plain "
+            f"{opened} Place <strong>all pledged ornaments together</strong> on a plain "
             "surface and upload <strong>up to 3 photos</strong>; I'll list every piece I can see so you can weigh them."
         )
         if not f.get("ai_enabled", True):
@@ -192,13 +202,22 @@ def draft(step: str, f: dict) -> str:
     if step == "report":
         pledge = f" Pledge amount <strong>{_inr(f['pledge_amount'])}</strong>." if f.get("pledge_amount") is not None else ""
         if f.get("recommendation") == "PROCEED":
-            return (
-                f"Report <strong>{f['report_id']}</strong> is ready — recommendation <strong>PROCEED</strong>.{pledge} "
-                "Open it to e-sign and download."
+            opened = (
+                f" Gold loan account <strong>{f['account_number']}</strong> is now open for application "
+                f"{f.get('application_no') or 'this application'}."
+                if f.get("account_number") else ""
             )
+            return (
+                f"Report <strong>{f['report_id']}</strong> is ready — recommendation <strong>PROCEED</strong>.{pledge}"
+                f"{opened} Open it to e-sign and download."
+            )
+        pending = (
+            " No gold loan account is opened yet — that follows the approving officer's decision."
+            if f.get("fresh") else ""
+        )
         return (
             f"Report <strong>{f['report_id']}</strong> is ready — recommendation <strong>REVIEW</strong> "
-            f"with {f.get('warnings', 0)} point(s) for the approving officer.{pledge}"
+            f"with {f.get('warnings', 0)} point(s) for the approving officer.{pledge}{pending}"
         )
 
     if step == "continue":
