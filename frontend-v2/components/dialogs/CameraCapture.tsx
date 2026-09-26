@@ -20,7 +20,14 @@ export default function CameraCapture({ onCapture, onClose }: { onCapture: (file
     (async () => {
       if (!navigator.mediaDevices?.getUserMedia) {
         setStatus("error");
-        setError("This browser doesn't support camera capture. Use Browse instead.");
+        // Browsers only expose the camera on a secure origin (HTTPS, or localhost in development),
+        // so on a plain-HTTP deployment the API is simply absent — say that, don't blame the browser.
+        setError(
+          window.isSecureContext
+            ? "This browser doesn't support camera capture. Use Browse instead."
+            : "Camera capture needs a secure (HTTPS) connection — this site is served over plain HTTP. " +
+              "Photograph with the phone or webcam app and use Browse, or ask IT to put the portal behind HTTPS."
+        );
         return;
       }
       try {

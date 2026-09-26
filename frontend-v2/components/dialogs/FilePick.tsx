@@ -56,6 +56,12 @@ export function DropZone({
   const inputRef = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
   const [camera, setCamera] = useState(false);
+  // The camera API only exists on a secure origin; on plain HTTP the button would open a dead dialog.
+  const [cameraAvailable, setCameraAvailable] = useState(true);
+
+  useEffect(() => {
+    setCameraAvailable(!!navigator.mediaDevices?.getUserMedia);
+  }, []);
 
   const accept = allowPdf ? "image/jpeg,image/png,image/webp,application/pdf" : "image/jpeg,image/png,image/webp";
 
@@ -106,9 +112,10 @@ export function DropZone({
           </button>
           <button
             type="button"
-            disabled={disabled}
+            disabled={disabled || !cameraAvailable}
             onClick={() => setCamera(true)}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 text-xs font-semibold text-brand-700 transition-colors hover:border-brand-300 hover:bg-brand-50 disabled:cursor-not-allowed"
+            title={cameraAvailable ? undefined : "Camera capture needs an HTTPS connection — use Browse"}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 text-xs font-semibold text-brand-700 transition-colors hover:border-brand-300 hover:bg-brand-50 disabled:cursor-not-allowed disabled:text-ink-faint disabled:hover:border-line-strong disabled:hover:bg-surface"
           >
             <Icon name="camera" size={14} /> {cameraLabel}
           </button>

@@ -81,6 +81,16 @@ def require_user(request: Request) -> dict:
     return user
 
 
+def is_https(request: Request) -> bool:
+    """True when the browser reached us over HTTPS, including through a proxy or tunnel.
+
+    Behind nginx or a Cloudflare tunnel the request arrives at uvicorn over plain HTTP, so the
+    scheme alone would mark a perfectly secure session as insecure and drop the ``Secure`` flag.
+    """
+    forwarded = request.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower()
+    return (forwarded or request.url.scheme) == "https"
+
+
 def set_cookie(response: Response, user_id: int, secure: bool) -> None:
     response.set_cookie(
         auth.COOKIE_NAME,
@@ -100,7 +110,7 @@ async def login(body: Credentials, request: Request):
         logger.info("Failed sign-in for %r", body.email[:80])
         return JSONResponse(status_code=401, content={"error": SIGN_IN_FAILED})
     response = JSONResponse(content={"user": user})
-    set_cookie(response, user["id"], secure=request.url.scheme == "https")
+    set_cookie(response, user["id"], secure=is_https(request))
     return response
 
 
