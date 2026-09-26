@@ -7,7 +7,7 @@ import { useAuth } from "@/components/providers/AuthProvider";
 import { FederalWordmark } from "@/components/shell/Brand";
 import ShellkodeLogo from "@/components/shell/ShellkodeLogo";
 import Button from "@/components/ui/Button";
-import { FieldError, Input, Label } from "@/components/ui/Field";
+import { Input, Label } from "@/components/ui/Field";
 import Icon, { type IconName } from "@/components/ui/Icon";
 import { ApiError } from "@/lib/api";
 import { fadeUp, stagger } from "@/lib/motion";
@@ -166,39 +166,6 @@ export default function SignInForm() {
               Sign in
             </Button>
           </form>
-
-          <FieldError />
-
-          <div className="mt-8 rounded-2xl border border-line bg-surface p-4 shadow-xs">
-            <p className="flex items-center gap-1.5 text-2xs font-bold uppercase tracking-wider text-ink-muted">
-              <Icon name="info" size={13} /> Demo accounts
-            </p>
-            <ul className="mt-2.5 space-y-1.5">
-              {[
-                { email: "assessor@federalbank.co.in", who: "Branch assessor" },
-                { email: "officer@federalbank.co.in", who: "Gold loan officer" },
-                { email: "manager@federalbank.co.in", who: "Branch manager" },
-              ].map((account) => (
-                <li key={account.email}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEmail(account.email);
-                      setPassword("Federal@2026");
-                      setError("");
-                    }}
-                    className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-brand-50"
-                  >
-                    <span className="truncate font-mono text-xs text-ink-2">{account.email}</span>
-                    <span className="shrink-0 text-2xs text-ink-faint">{account.who}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-2 px-2 text-2xs text-ink-faint">
-              Password <span className="font-mono text-ink-muted">Federal@2026</span> · click a row to fill the form
-            </p>
-          </div>
 
           <p className="mt-6 text-center text-2xs text-ink-faint">
             Federal Bank · GL Portal — for authorised branch staff only
