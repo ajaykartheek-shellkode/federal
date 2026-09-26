@@ -102,12 +102,21 @@ class CollateralResult(BaseModel):
 # --------------------------------------------------------------------------- #
 # Agent output: Weighing-machine photo (the total weight of the collateral)
 # --------------------------------------------------------------------------- #
+class ItemWeight(BaseModel):
+    """One ornament's share of the machine total, as apportioned by the agent."""
+
+    id: str
+    weight_g: float
+    basis: str = ""  # one short phrase: why this piece carries this share
+
+
 class ScaleResult(BaseModel):
     status: Status
     reading_visible: bool = False
     weight_g: Optional[float] = None
     reading_text: str = ""  # exactly as shown on the display, including the unit
     ornaments_on_pan: bool = True
+    items: List[ItemWeight] = Field(default_factory=list)  # the total split across the pledge list
     issues: List[str] = Field(default_factory=list)
 
 

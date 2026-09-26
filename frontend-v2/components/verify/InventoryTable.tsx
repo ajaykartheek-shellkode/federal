@@ -29,9 +29,20 @@ function WeightCell({ item, locked }: { item: InventoryItem; locked: boolean }) 
   const recorded = item.weight_gm > 0;
 
   if (recorded || locked) {
+    // An apportioned share is the agent's estimate until the assessor confirms or corrects it.
+    const apportioned = item.weight_source === "ai";
     return (
       <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-        <span className="font-semibold tabular-nums text-ink">{recorded ? formatWeight(item.weight_gm) : "—"}</span>
+        <span className={cn("font-semibold tabular-nums", apportioned ? "text-ink-2" : "text-ink")}>
+          {recorded ? formatWeight(item.weight_gm) : "—"}
+        </span>
+        {apportioned && (
+          <span title={item.weight_basis ? `Split from the machine total · ${item.weight_basis}` : "Split from the machine total"}>
+            <Badge tone="brand">
+              <Icon name="sparkles" size={9} /> AI
+            </Badge>
+          </span>
+        )}
         {!locked && (
           <button
             type="button"
@@ -310,6 +321,21 @@ export default function InventoryTable({ session }: { session: SessionView }) {
       cell: ({ item }) => <WeightCell item={item} locked={locked} />,
     },
   ];
+
+  if (session.inventory.some((r) => r.weight_source === "ai" && r.weight_basis)) {
+    columns.push({
+      key: "basis",
+      header: "Why this weight",
+      cell: ({ item }) =>
+        item.weight_source === "ai" && item.weight_basis ? (
+          <span className="text-xs text-ink-muted">{item.weight_basis}</span>
+        ) : item.weight_gm > 0 ? (
+          <span className="text-xs text-ink-faint">Weighed by the assessor</span>
+        ) : (
+          <span className="text-ink-faint">—</span>
+        ),
+    });
+  }
 
   if (showReading) {
     columns.push(

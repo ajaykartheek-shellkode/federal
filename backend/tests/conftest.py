@@ -29,6 +29,7 @@ from app.schemas import (  # noqa: E402
     DocumentItemResult,
     DocumentMatches,
     DocumentResult,
+    ItemWeight,
     ScaleResult,
 )
 
@@ -67,6 +68,7 @@ class FakeBedrock:
                 reading_visible=visible,
                 weight_g=self.scale_weight_g,
                 reading_text=f"{self.scale_weight_g} g" if visible else "",
+                items=self._split(task_text) if visible else [],
                 issues=[] if visible else ["Display not readable"],
             )
         if model is DamageResult:
@@ -94,6 +96,15 @@ class FakeBedrock:
             return DocumentResult(overall_status=self.document_status, documents=docs)
         # Conversation replies (guidance / answer)
         return model.model_validate({"text": "Polished message."})
+
+    def _split(self, task_text):
+        """Apportion the machine total over the ids listed in the prompt (even shares, like the model)."""
+        ids = [line.split("id=", 1)[1].split(" |", 1)[0].strip()
+               for line in task_text.splitlines() if "id=" in line]
+        if not ids:
+            return []
+        share = round(float(self.scale_weight_g) / len(ids), 2)
+        return [ItemWeight(id=ref, weight_g=share, basis="even share") for ref in ids]
 
     def _collateral(self, _system_prompt, blocks):
         """Every ornament the assessor photographed — the first image carries the detections."""
@@ -142,14 +153,28 @@ def database():
     return engine
 
 
+# The seeded staff account every test signs in as.
+STAFF_EMAIL = "assessor@federalbank.co.in"
+STAFF_PASSWORD = "Federal@2026"
+
+
 @pytest.fixture
-def client(database, fake_bedrock):
+def anonymous_client(database, fake_bedrock):
+    """A client with no session cookie — for testing the guard itself."""
     from fastapi.testclient import TestClient
 
     import main
 
     with TestClient(main.app) as c:
         yield c
+
+
+@pytest.fixture
+def client(anonymous_client):
+    """Signed in as the branch assessor, like every real request."""
+    res = anonymous_client.post("/api/auth/login", json={"email": STAFF_EMAIL, "password": STAFF_PASSWORD})
+    assert res.status_code == 200, res.text
+    return anonymous_client
 
 
 @pytest.fixture(autouse=True)

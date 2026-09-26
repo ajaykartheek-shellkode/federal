@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import RequireAuth from "@/components/auth/RequireAuth";
 import ReportDocument from "@/components/report/ReportDocument";
 import { FederalWordmark } from "@/components/shell/Brand";
 import Button from "@/components/ui/Button";
@@ -12,17 +13,25 @@ import type { SessionView } from "@/lib/types";
 
 /** Standalone, printable verification report — shareable link and clean "Save as PDF". */
 export default function ReportPage({ params }: { params: { sessionId: string } }) {
+  return (
+    <RequireAuth>
+      <Report sessionId={params.sessionId} />
+    </RequireAuth>
+  );
+}
+
+function Report({ sessionId }: { sessionId: string }) {
   const [session, setSession] = useState<SessionView | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    getSession(params.sessionId)
+    getSession(sessionId)
       .then(({ session }) => {
         if (!session.report) setError("The report for this verification hasn't been generated yet.");
         setSession(session);
       })
       .catch((e) => setError(e instanceof ApiError ? e.message : "Couldn't load the report."));
-  }, [params.sessionId]);
+  }, [sessionId]);
 
   return (
     <div id="report-print-root" className="h-screen overflow-y-auto bg-canvas">
@@ -35,7 +44,7 @@ export default function ReportPage({ params }: { params: { sessionId: string } }
           </div>
           <div className="flex items-center gap-2">
             <Link
-              href={`/?session=${params.sessionId}`}
+              href={`/?session=${sessionId}`}
               className="inline-flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-semibold text-ink-2 hover:bg-brand-50 hover:text-brand-700"
             >
               <Icon name="arrowRight" size={16} className="rotate-180" /> Open in portal
@@ -45,7 +54,7 @@ export default function ReportPage({ params }: { params: { sessionId: string } }
             </Button>
             {session?.report && (
               <a
-                href={reportPdfUrl(params.sessionId)}
+                href={reportPdfUrl(sessionId)}
                 download={`${session.report.report_id}.pdf`}
                 className="inline-flex h-10 items-center gap-2 rounded-xl bg-gold-500 px-4 text-sm font-semibold text-brand-900 shadow-gold transition-colors hover:bg-gold-400"
               >

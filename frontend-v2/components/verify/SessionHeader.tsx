@@ -66,11 +66,11 @@ export default function SessionHeader({ session }: { session: SessionView }) {
         </Kpi>
         <Kpi
           icon="weighScale"
-          label="Weight entered"
+          label="Total weight"
           hint={
             session.weight.scale_g !== null
               ? `Weighing machine reads ${formatNumber(session.weight.scale_g)} g`
-              : "Total of the weights entered per ornament"
+              : "Sum of the per-ornament weights"
           }
         >
           <AnimatedNumber value={stats.total_weight} format={(n) => formatNumber(n)} />
@@ -91,7 +91,7 @@ export default function SessionHeader({ session }: { session: SessionView }) {
           hint={
             stats.pledge_is_estimate
               ? "Provisional until every ornament is assayed. Not a sanction amount."
-              : "Weight entered × rate for the assayed purity × LTV, less the damage deduction. Not a sanction amount."
+              : "Weight × rate for the assayed purity × LTV, less the damage deduction. Not a sanction amount."
           }
         >
           <AnimatedNumber value={stats.pledge_amount} format={(n) => formatINR(n)} />

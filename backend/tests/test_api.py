@@ -1,8 +1,8 @@
 """End-to-end API tests against the test database with Bedrock faked.
 
-The journey: collateral photo → inventory, weights typed per item, weighing-machine photo,
-one CaratMeter request per application, damage with a percentage, pledge valuation, documents,
-report.
+The journey: sign in, find the customer by mobile, collateral photo → inventory, weighing-machine
+photo → total split across the ornaments, one CaratMeter request per application, damage with a
+percentage, pledge valuation, documents, report.
 """
 
 from __future__ import annotations
@@ -11,9 +11,12 @@ import json
 
 from tests.conftest import png_bytes
 
-RAJESH = "GL2024001234"  # Fresh Loan (AI on)
-PRIYA = "GL2024001189"   # Renewal (AI off by default)
-SURESH = "GL2024001098"  # Fresh Loan; the mock CaratMeter reads item-2 lighter than entered
+# Journeys start from the customer's mobile number.
+RAJESH = "98200 41234"  # Fresh Loan (AI on)
+PRIYA = "98111 55190"   # Renewal (AI off by default)
+SURESH = "94470 31098"  # Fresh Loan; the mock CaratMeter reads item-2 lighter than entered
+
+PRIYA_ACCOUNT = "GL2024001189"
 
 
 def parse_sse(text: str):
@@ -30,8 +33,8 @@ def parse_sse(text: str):
     return events
 
 
-def start(client, account=RAJESH):
-    res = client.post("/api/chat/start", json={"account": account})
+def start(client, mobile=RAJESH):
+    res = client.post("/api/chat/start", json={"mobile": mobile})
     assert res.status_code == 200, res.text
     return res.json()["session"]
 
@@ -50,22 +53,42 @@ def photo(name="set.png", size=(320, 240)):
     return (name, png_bytes(size), "image/png")
 
 
-def weigh(client, sid, weights):
-    """Enter the weight of each ornament, as the assessor does at the counter."""
+def weigh(client, sid, weights, justification=""):
+    """Enter or correct the weight of each ornament, as the assessor does at the counter."""
     session = None
     for ref, grams in weights.items():
-        res = client.post("/api/chat/weight", json={"session_id": sid, "ref": ref, "weight_gm": grams})
+        res = client.post("/api/chat/weight", json={
+            "session_id": sid, "ref": ref, "weight_gm": grams, "justification": justification,
+        })
         assert res.status_code == 200, res.text
         session = res.json()["session"]
     return session
 
 
-def test_start_opens_an_application_for_a_fresh_loan(client):
-    assert client.post("/api/chat/start", json={"account": "  "}).status_code == 400
-    res = client.post("/api/chat/start", json={"account": "NOPE123"})
-    assert res.status_code == 404 and res.json()["samples"][0]["customer_id"]
+def test_signing_in_is_required(anonymous_client):
+    assert anonymous_client.post("/api/chat/start", json={"mobile": RAJESH}).status_code == 401
+    assert anonymous_client.get("/api/settings").status_code == 401
+    assert anonymous_client.get("/api/health").status_code in (200, 503)  # the deploy probe stays open
 
-    session = start(client, " gl2024001234 ")
+    bad = anonymous_client.post("/api/auth/login", json={"email": "assessor@federalbank.co.in", "password": "nope"})
+    assert bad.status_code == 401 and "match" in bad.json()["error"]
+
+    ok = anonymous_client.post("/api/auth/login", json={"email": "ASSESSOR@federalbank.co.in", "password": "Federal@2026"})
+    assert ok.status_code == 200 and ok.json()["user"]["name"] == "Divya Raghavan"
+    assert anonymous_client.get("/api/auth/me").json()["user"]["branch"] == "FED-MUM-001"
+
+    anonymous_client.post("/api/auth/logout")
+    assert anonymous_client.get("/api/auth/me").status_code == 401
+
+
+def test_start_finds_the_customer_by_mobile(client):
+    assert client.post("/api/chat/start", json={"mobile": "  "}).status_code == 400
+    assert client.post("/api/chat/start", json={"mobile": "9820"}).status_code == 400  # not a mobile number
+    res = client.post("/api/chat/start", json={"mobile": "99999 00000"})
+    assert res.status_code == 404 and res.json()["samples"][0]["mobile"]
+
+    session = start(client, " 98200 41234 ")
+    assert session["loan"]["customer_name"] == "Rajesh Kumar"
     assert session["ai_enabled"] is True
     assert session["inventory"] == []  # CBS supplies the customer, never the ornaments
     assert session["steps"] == ["collateral", "weight", "damage", "valuation", "document", "report"]
@@ -75,43 +98,32 @@ def test_start_opens_an_application_for_a_fresh_loan(client):
     assert session["application"]["reference"].startswith("APP-") and session["loan"]["account_number"] == ""
     assert session["loan"]["application_no"] == session["application"]["reference"]
 
-    # The same customer can be found by CIF, mobile or ID proof — no loan account needed.
-    for query in ("CBS100234", "98200 41234", "2337 4600 1234"):
-        found = start(client, query)
-        assert found["loan"]["customer_name"] == "Rajesh Kumar"
-        assert found["application"]["reference"] != session["application"]["reference"]  # a new application each time
+    # Digits are what count, and every start opens its own application.
+    again = start(client, "9820041234")
+    assert again["loan"]["customer_name"] == "Rajesh Kumar"
+    assert again["application"]["reference"] != session["application"]["reference"]
 
 
-def test_application_can_be_opened_for_a_new_customer(client, fake_bedrock):
-    """A walk-in who is not in CBS yet: the branch onboards them and the application opens."""
-    new_customer = {"name": "Anita Menon", "mobile": "90000 12345", "id_number": "4411 9087 2213",
-                    "address": "9 Residency Road, Bengaluru", "branch": "FED-BLR-011"}
-    res = client.post("/api/chat/application", json=new_customer)
-    assert res.status_code == 200, res.text
-    s = res.json()["session"]
-    assert s["loan"]["customer_name"] == "Anita Menon" and s["loan"]["customer_id"].startswith("CBS")
-    assert s["application"]["kind"] == "fresh" and s["loan"]["account_number"] == ""
-    assert s["loan"]["id_number_masked"].endswith("2213")
+def test_cbs_holds_exactly_the_five_demo_customers(client):
+    listed = client.get("/api/chat/customers").json()["customers"]
+    assert [c["customer_name"] for c in listed] == [
+        "Rajesh Kumar", "Priya Sharma", "Arjun Patel", "Meena Devi", "Suresh Nair",
+    ]
+    assert all(c["mobile"] and c["branch"] for c in listed)
+    # An unknown number offers the same list instead of guessing at a match.
+    res = client.post("/api/chat/start", json={"mobile": "99999 00000"})
+    assert [s["mobile"] for s in res.json()["samples"]] == [c["mobile"] for c in listed]
 
-    # They are now findable like any other customer, and cannot be onboarded twice.
-    found = start(client, "90000 12345")
-    assert found["loan"]["customer_name"] == "Anita Menon"
-    assert client.post("/api/chat/application", json=new_customer).status_code == 409
+    from app import cbs
 
-    for bad in ({**new_customer, "name": "A"}, {**new_customer, "mobile": "123"},
-                {**new_customer, "id_number": "x"}, {**new_customer, "branch": ""}):
-        assert client.post("/api/chat/application", json=bad).status_code == 400
+    assert cbs.find_customer_by_mobile("94470 31098")["loan_context"]["customer_name"] == "Suresh Nair"
+    assert cbs.find_customer_by_mobile("99458 70317") is None  # retired from the demo set
 
 
-def test_new_customer_gets_the_account_they_are_sanctioned(client, fake_bedrock):
+def test_fresh_application_gets_its_account_on_sanction(client, fake_bedrock):
     fake_bedrock.scale_weight_g = 33.0
-    res = client.post("/api/chat/application", json={
-        "name": "Ravi Menon", "mobile": "90000 54321", "id_number": "5511 2233 4455",
-        "address": "4 MG Road, Bengaluru", "branch": "FED-BLR-011",
-    })
-    sid = res.json()["session"]["session_id"]
+    sid = start(client)["session_id"]
     step(client, sid, "collateral", files=[("collateral_images", photo())])
-    weigh(client, sid, {"item-1": 10, "item-2": 11, "item-3": 12})
     step(client, sid, "scale_photo", files=[("scale_image", photo("scale.png"))])
     step(client, sid, "measure")
     step(client, sid, "continue")  # damage -> valuation
@@ -119,16 +131,45 @@ def test_new_customer_gets_the_account_they_are_sanctioned(client, fake_bedrock)
     step(client, sid, "document", files=[("documents", photo())], document_types=json.dumps(["Aadhaar Card"]))
     _, _, s = step(client, sid, "report")
 
-    account = s["loan"]["account_number"]
-    assert s["report"]["recommendation"] == "PROCEED" and account.startswith("GLBLR")
-    # CBS now holds the loan account against that customer, so a renewal finds them by it.
-    assert start(client, account)["loan"]["customer_name"] == "Ravi Menon"
+    assert s["report"]["recommendation"] == "PROCEED"
+    assert s["loan"]["account_number"].startswith("GLMUM") and s["loan"]["account_issued_at"]
+
+
+def test_apportioned_weights_can_be_replaced_without_a_justification(client, fake_bedrock):
+    """The agent's share is a starting point: the assessor owns it the moment they touch it."""
+    fake_bedrock.scale_weight_g = 33.0
+    sid = start(client)["session_id"]
+    step(client, sid, "collateral", files=[("collateral_images", photo())])
+    _, _, s = step(client, sid, "scale_photo", files=[("scale_image", photo("scale.png"))])
+    assert all(r["weight_source"] == "ai" and r["weight_basis"] for r in s["inventory"])
+
+    edit = client.post("/api/chat/edit", json={
+        "session_id": sid, "ref": "item-3", "changes": {"weight_gm": 12.4}, "justification": "",
+    })
+    assert edit.status_code == 200, edit.text
+    s = edit.json()["session"]
+    row = next(r for r in s["inventory"] if r["id"] == "item-3")
+    assert row["weight_gm"] == 12.4 and row["weight_source"] == "assessor" and row["weight_basis"] == ""
+    assert s["audit"] == []
+
+    # Now it is the assessor's number: changing it again, or any other field, needs a reason.
+    for body in (
+        {"ref": "item-3", "changes": {"weight_gm": 12.9}},
+        {"ref": "item-2", "changes": {"name": "Gold Kada"}},
+        {"ref": "item-2", "changes": {"weight_gm": 9.5, "name": "Gold Kada"}},
+    ):
+        assert client.post("/api/chat/edit", json={"session_id": sid, "justification": "", **body}).status_code == 409
+
+    ok = client.post("/api/chat/edit", json={
+        "session_id": sid, "ref": "item-3", "changes": {"weight_gm": 13.0}, "justification": "Re-weighed at the counter",
+    })
+    assert ok.status_code == 200 and len(ok.json()["session"]["audit"]) == 1
 
 
 def test_existing_loan_keeps_its_account(client):
     session = start(client, PRIYA)  # Renewal
     assert session["application"]["kind"] == "existing"
-    assert session["loan"]["account_number"] == PRIYA and session["loan"]["application_no"] == ""
+    assert session["loan"]["account_number"] == PRIYA_ACCOUNT and session["loan"]["application_no"] == ""
 
 
 def test_full_happy_path_with_reports(client, fake_bedrock):
@@ -155,20 +196,29 @@ def test_full_happy_path_with_reports(client, fake_bedrock):
     assert asset.status_code == 200 and asset.headers["content-type"] == "image/png"
 
     # The CaratMeter is only asked once every ornament has a weight.
-    res, _, _ = step(client, sid, "measure")
-    assert res.status_code == 200
     _, events, s = step(client, sid, "measure")
-    assert any(e == "notice" and "Enter the weight" in d["text"] for e, d in events)
+    assert any(e == "notice" and "have no weight yet" in d["text"] for e, d in events)
 
-    s = weigh(client, sid, {"item-1": 10, "item-2": 11, "item-3": 12})
-    assert s["weight"]["entered_g"] == 33 and s["weight"]["unweighed"] == []
-    assert s["stats"]["weighed"] == 3
-
+    # The machine photo carries the total, and the agent splits it across the pledge list.
     _, events, s = step(client, sid, "scale_photo", files=[("scale_image", photo("scale.png"))])
     assert [d["key"] for e, d in events if e == "exec-step" and d["status"] == "done"] == [
-        "receive", "read", "reconcile", "result",
+        "receive", "read", "allocate", "result",
     ]
     assert s["scale"]["weight_g"] == 33.02 and s["weight"]["scale_status"] == "match"
+    assert [r["weight_gm"] for r in s["inventory"]] == [11.0, 11.01, 11.01]  # sums to the display
+    assert all(r["weight_source"] == "ai" for r in s["inventory"])
+    assert s["weight"]["entered_g"] == 33.02 and s["weight"]["unweighed"] == []
+    assert s["stats"]["weighed"] == 3
+    assert s["audit"] == []  # an apportioned weight is a starting point, not a recorded decision
+
+    # Correcting a share the agent apportioned needs no justification; correcting it again does.
+    res = client.post("/api/chat/weight", json={"session_id": sid, "ref": "item-1", "weight_gm": 12.5})
+    assert res.status_code == 200 and res.json()["session"]["audit"] == []
+    row = next(r for r in res.json()["session"]["inventory"] if r["id"] == "item-1")
+    assert row["weight_gm"] == 12.5 and row["weight_source"] == "assessor"
+    assert client.post("/api/chat/weight", json={"session_id": sid, "ref": "item-1", "weight_gm": 12.9}).status_code == 409
+    s = weigh(client, sid, {"item-1": 11.0}, "Re-weighed on the counter scale")
+    assert len(s["audit"]) == 1  # only the correction of a weight an assessor had confirmed
 
     _, events, s = step(client, sid, "measure")
     run = [d["key"] for e, d in events if e == "exec-step" and d["status"] == "done"]

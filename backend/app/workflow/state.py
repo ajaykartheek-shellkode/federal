@@ -9,10 +9,11 @@ verification is recommended to proceed, and CBS supplies the customer and KYC on
 inventory:
     1. collateral  the assessor photographs the ornaments; the agent detects and crops each one
                    and THAT becomes the inventory (editable: rename, weigh, add, remove)
-    2. weight      a weight is entered per item, the weighing-machine photo gives the total, and
-                   one CaratMeter request per loan application returns the purity of every item
+    2. weight      the weighing-machine photo gives the total, the agent apportions it across the
+                   ornaments (editable), and one CaratMeter request per loan application returns
+                   the purity of every item
     3. damage      a photo, severity and damage % per damaged ornament
-    4. valuation   pledge amount = entered weight × rate for the assessed purity × LTV − damage
+    4. valuation   pledge amount = weight × rate for the assessed purity × LTV − damage
     5. document    identity proof, cross-verified against the CBS customer record
     6. report      PROCEED / REVIEW with reasons, audit trail and signatures
 
@@ -276,6 +277,8 @@ def new_item(
         "material": material,
         "carat": "",  # unknown until the CaratMeter reads it
         "weight_gm": float(weight_gm or 0),
+        "weight_source": "assessor" if float(weight_gm or 0) > 0 else "",  # "ai" once apportioned
+        "weight_basis": "",  # the agent's one-phrase reason for this share
         "quantity": int(quantity or 1),
         "damage_percent": 0.0,
         "origin": origin,
@@ -578,8 +581,10 @@ def set_item_weight(state: dict, ref: str, weight_gm, justification: str = "") -
     """Record the weight the assessor read off the machine for one ornament.
 
     Weighing an ornament for the first time is data entry, not a correction, so it leaves no audit
-    entry — the weight itself is on the pledge list and in the report. Changing a weight already
-    recorded does need a justification, and is audited.
+    entry — the weight itself is on the pledge list and in the report. The same goes for the first
+    correction of a share the agent apportioned from the machine total: nobody has stood behind
+    that number yet. Changing a weight an assessor recorded does need a justification, and is
+    audited.
     """
     require_open(state)
     row = find_item(state, ref)
@@ -589,16 +594,19 @@ def set_item_weight(state: dict, ref: str, weight_gm, justification: str = "") -
     prior = float(row.get("weight_gm") or 0)
     if abs(prior - weight) < 0.0005:
         raise WorkflowError("The weight is unchanged.")
+    apportioned = row.get("weight_source") == "ai"
     justification = (justification or "").strip()
-    if prior > 0 and len(justification) < 5:
+    if prior > 0 and not apportioned and len(justification) < 5:
         raise WorkflowError("A justification of at least 5 characters is required to change a recorded weight.")
 
     row["weight_gm"] = weight
+    row["weight_source"] = "assessor"
+    row["weight_basis"] = ""
     if row.get("measurement"):
         # The comparison changed, so an earlier acceptance no longer describes this finding.
         row["measurement_status"] = measurement_status(row, valuation_of(state))
         row["measurement_overridden"] = False
-    if prior <= 0:
+    if prior <= 0 or apportioned:
         return None
     entry = _audit_entry("weight", ref, row["name"], f"{_grams(prior)} g", f"{_grams(weight)} g", justification)
     state["audit"].append(entry)
@@ -716,6 +724,47 @@ def record_scale_photo(state: dict, meta: dict, result: Optional[dict]) -> None:
     state["scale_overridden"] = False
 
 
+def apply_weight_split(state: dict, allocations: List[dict]) -> int:
+    """Fill each ornament's weight from the agent's split of the machine total.
+
+    A weight the assessor typed is never overwritten — the split only fills blanks and refreshes
+    its own earlier guesses (a re-shot machine photo). Nothing is audited: an apportioned weight
+    is a starting point the assessor confirms or corrects, and the correction is what gets
+    recorded. Returns how many rows the split filled.
+    """
+    require_open(state)
+    shares = {}
+    for entry in allocations or []:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            grams = round(float(entry.get("weight_g")), 3)
+        except (TypeError, ValueError):
+            continue
+        ref = str(entry.get("id") or "").strip()
+        if ref and 0 < grams <= MAX_ITEM_G:
+            shares[ref] = (grams, str(entry.get("basis") or "")[:60])
+
+    filled = 0
+    valuation = valuation_of(state)
+    for row in state["inventory"]:
+        share = shares.get(row["id"])
+        if share is None or row.get("weight_source") == "assessor":
+            continue
+        row["weight_gm"], row["weight_basis"] = share[0], share[1]
+        row["weight_source"] = "ai"
+        if row.get("measurement"):
+            row["measurement_status"] = measurement_status(row, valuation)
+            row["measurement_overridden"] = False
+        filled += 1
+    return filled
+
+
+def apportioned_items(state: dict) -> List[dict]:
+    """Ornaments still carrying the agent's apportioned weight rather than a confirmed one."""
+    return [r for r in state["inventory"] if r.get("weight_source") == "ai"]
+
+
 def _scale_of(r: dict) -> dict:
     try:
         weight = float(r.get("weight_g")) if r.get("weight_g") is not None else None
@@ -732,7 +781,7 @@ def _scale_of(r: dict) -> dict:
 
 
 def weight_summary(state: dict) -> dict:
-    """The three weights that must agree: entered per item, the weighing machine, the CaratMeter."""
+    """The three weights that must agree: per ornament, the weighing machine, the CaratMeter."""
     inv = state["inventory"]
     valuation = valuation_of(state)
     item_tolerance = float(valuation.get("weight_tolerance_g", 0.1))
@@ -952,15 +1001,21 @@ def apply_override(state: dict, target: str, ref: str, justification: str) -> di
     return entry
 
 
-def apply_edit(state: dict, ref: str, changes: dict, justification: str) -> dict:
-    """Correct an inventory row (name / purity / weight / quantity / material) with audit."""
+def apply_edit(state: dict, ref: str, changes: dict, justification: str) -> Optional[dict]:
+    """Correct an inventory row (name / purity / weight / quantity / material) with audit.
+
+    A justification is required for every correction except one: replacing a weight the agent
+    apportioned from the machine total, which nobody has stood behind yet.
+    """
     justification = (justification or "").strip()
     require_open(state)
-    if len(justification) < 5:
-        raise WorkflowError("A justification of at least 5 characters is required.")
     row = find_item(state, ref)
     if row is None:
         raise WorkflowError("Unknown inventory item.")
+    weight_only = set(k for k, v in (changes or {}).items() if v is not None) == {"weight_gm"}
+    confirming = weight_only and row.get("weight_source") == "ai"
+    if len(justification) < 5 and not confirming:
+        raise WorkflowError("A justification of at least 5 characters is required.")
 
     updated = dict(row)
     if changes.get("name") is not None:
@@ -982,6 +1037,7 @@ def apply_edit(state: dict, ref: str, changes: dict, justification: str) -> dict
         updated["carat"] = carat
     if changes.get("weight_gm") is not None:
         updated["weight_gm"] = _parse_weight(changes["weight_gm"])
+        updated["weight_source"], updated["weight_basis"] = "assessor", ""
     if changes.get("quantity") is not None:
         try:
             qty = int(changes["quantity"])
@@ -1003,6 +1059,8 @@ def apply_edit(state: dict, ref: str, changes: dict, justification: str) -> dict
     for dmg in state["damages"]:
         if dmg["ornament_id"] == ref:
             dmg["item"] = row["name"]
+    if confirming:
+        return None  # confirming the agent's share is data entry, not a correction to audit
     entry = _audit_entry("edit", ref, row["name"], before, after, justification)
     state["audit"].append(entry)
     return entry
@@ -1068,7 +1126,7 @@ def review_reasons(state: dict) -> List[dict]:
             elif scale["scale_status"] == "mismatch":
                 warn.append({"level": "warn", "text": (
                     f"Weighing machine reads {_grams(scale['scale_g'])} g against {_grams(scale['entered_g'])} g "
-                    f"entered across the items — a difference of {_grams(abs(scale['scale_diff_g']))} g"
+                    f"across the pledge list — a difference of {_grams(abs(scale['scale_diff_g']))} g"
                 )})
         unpriced = value_inventory(state["inventory"], valuation_of(state))["totals"]["unpriced"]
         if unpriced:

@@ -42,6 +42,8 @@ export interface Measurement {
   confidence: number;
 }
 
+export type WeightSource = "" | "ai" | "assessor";
+
 export interface InventoryItem {
   /** Generated here (item-1, item-2 …) and used as the CaratMeter request tag. */
   id: string;
@@ -50,8 +52,12 @@ export interface InventoryItem {
   material: string;
   /** Purity token: empty until the CaratMeter assays it ("22" = 22K gold, "925" = sterling silver). */
   carat: string;
-  /** Entered by the assessor at the counter. 0 until weighed. */
+  /** Grams. 0 until the machine total is apportioned or the assessor types one. */
   weight_gm: number;
+  /** "ai" while it is the agent's share of the machine total, "assessor" once a human owns it. */
+  weight_source?: WeightSource;
+  /** The agent's one-phrase reason for this share, e.g. "heavy 22K bangle". */
+  weight_basis?: string;
   quantity: number;
   damage_percent: number;
   origin: ItemStatus;
@@ -416,4 +422,15 @@ export interface SampleAccount {
   mobile?: string;
   customer_name: string;
   scenario: string;
+  branch?: string;
+}
+
+// ---- staff -----------------------------------------------------------------
+export interface StaffUser {
+  id: number;
+  email: string;
+  name: string;
+  role: string;
+  branch: string;
+  initials: string;
 }

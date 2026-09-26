@@ -29,8 +29,8 @@ COLLATERAL_MANUAL_STEPS = [
 SCALE_STEPS = [
     {"key": "receive", "label": "Receiving the weighing-machine photo"},
     {"key": "read", "label": "Reading the machine display"},
-    {"key": "reconcile", "label": "Reconciling with the entered weights"},
-    {"key": "result", "label": "Recording the total weight"},
+    {"key": "allocate", "label": "Apportioning the total across the ornaments"},
+    {"key": "result", "label": "Recording the weights"},
 ]
 
 SCALE_MANUAL_STEPS = [

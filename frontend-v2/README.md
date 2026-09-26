@@ -2,7 +2,8 @@
 
 A 3-column, AI-guided single-page app (navigation rail · verification dashboard · Verification
 Agent chat) that walks a branch assessor through gold-loan collateral verification, built to the
-ShellKode TDD v3.0 and styled in the Federal Bank identity.
+ShellKode TDD v3.0 and styled in the Federal Bank identity. `/login` is the way in; everything else
+is behind the sign-in guard.
 
 Runs on **:3001** and proxies `/api/*` to the FastAPI backend on **:8000**, so AWS credentials
 never reach the browser.
@@ -21,16 +22,22 @@ npm run typecheck && npm run lint && npm run build
 
 ## The flow
 
-1. **Account** — enter a loan account number (chat or welcome screen). Only the customer and KYC
-   (masked) load from CBS; nothing is pledged yet.
+0. **Sign in** — `/login` (branded split screen, demo accounts listed on the page). The session is an
+   HttpOnly cookie; the rail's avatar shows who is signed in and holds **Sign out**.
+1. **Customer** — enter the customer's **mobile number** (chat or welcome screen; the welcome screen
+   also lists the CBS customers as chips). Only the customer and KYC (masked) load from CBS; nothing
+   is pledged yet.
 2. **Collateral photos** — lay the ornaments out on a plain surface and upload or webcam-capture up to
    3 photos per upload. The Collateral Validator checks the capture and **lists every ornament it can
    see**, cropping a thumbnail for each; that list *is* the pledged inventory. Rename, add or remove
    rows as needed — a re-capture replaces the list until weighing starts.
-3. **Weight & purity** — type each ornament's weight straight into the table, upload the
-   **weighing-machine photo** for the total (or type it), then fetch the purity: one CaratMeter
+3. **Weight & purity** — upload the **weighing-machine photo** with everything on the pan. The agent
+   reads the total off the display *and splits it across the pledge list*, so every ornament arrives
+   with a weight and a one-phrase reason ("thick curb chain, heaviest chain"); the shares always add
+   up to the display total. Each is marked **AI** until the assessor confirms it — correcting one in
+   the table needs no justification, changing it again does. Then fetch the purity: one CaratMeter
    request for the loan application returns an assay per ornament, graded against the valuation table
-   and cross-checked against the weight entered. Findings can be re-assayed or accepted with a
+   and cross-checked against each ornament's weight. Findings can be re-assayed or accepted with a
    justification. The **Pledge valuation** card shows the amount per ornament and in total (gross
    value → LTV margin → damage deduction → pledge).
 4. **Damage** — one close-up per damaged ornament with its **damage percentage**, which reduces that
@@ -56,10 +63,11 @@ Deep links: `/?session=<id>` reopens a verification, `/?view=reports|history|set
 ## Structure
 
 ```
-app/                      layout (Titillium Web), page, /report/[sessionId]
+app/                      layout (Titillium Web), page, /login, /report/[sessionId]
 components/
-  shell/                  AppShell, NavRail, TopBar, Federal Bank wordmark
-  providers/              VerificationProvider — session controller (start, steps over SSE, overrides, restore)
+  auth/                   SignInForm (the /login screen), RequireAuth guard
+  shell/                  AppShell, NavRail (account menu + sign out), TopBar, Federal Bank wordmark
+  providers/              AuthProvider — signed-in staff; VerificationProvider — session controller (start, steps over SSE, overrides, restore)
   chat/                   ChatPanel, ExecCard (live agent steps), Messages, ActionBar
   verify/                 dashboard cards: stepper, customer header, photos, weight & purity, inventory, pledge valuation, documents, report summary, audit
   dialogs/                collateral / damage / document uploads, camera capture, override & edit, scale reading, lightbox

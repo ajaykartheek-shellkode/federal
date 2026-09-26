@@ -55,7 +55,7 @@ export default function PledgeCard({ session }: { session: SessionView }) {
             <AnimatedNumber value={t.pledge_amount} format={(n) => formatINR(n)} />
           </p>
           <p className="mt-2 text-xs text-white/70">
-            on {formatWeight(t.weight_g)} entered · {plural(valuation.items.length, "ornament")}
+            on {formatWeight(t.weight_g)} across {plural(valuation.items.length, "ornament")}
             {t.is_estimate ? " · not all assayed yet" : ""}
           </p>
         </div>

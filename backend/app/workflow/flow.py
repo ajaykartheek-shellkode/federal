@@ -23,7 +23,6 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable, List, Optional
 
-from app import cbs
 from app import session as session_store
 from app import steps as STEPS
 from app import store
@@ -207,16 +206,19 @@ async def _collateral(ctx: StepContext) -> None:
 
 # --------------------------------------------------------------------------- weighing machine
 async def _scale_photo(ctx: StepContext) -> None:
-    """The weighing-machine photo: the total weight of everything on the pan."""
+    """The weighing-machine photo: the total on the display, apportioned across the ornaments."""
     state, photo = ctx.state, ctx.inputs.scale
+    if not state["inventory"]:
+        raise S.WorkflowError("Upload the collateral photo first — there is nothing on the pledge list to weigh.")
     ex = ExecRun(ctx, "scale", STEPS.SCALE_STEPS if ctx.ai else STEPS.SCALE_MANUAL_STEPS)
     stored = await ex.step("receive", asyncio.to_thread(_store_uploads, [photo]))
 
-    result = None
+    result, filled = None, 0
     if ctx.ai:
-        reading = await ex.step("read", scale_agent.read_scale(photo))
+        reading = await ex.step("read", scale_agent.read_scale(photo, state["inventory"]))
         result = reading.model_dump()
-        await ex.step("reconcile", _value(S.record_scale_photo, state, stored[0], result))
+        S.record_scale_photo(state, stored[0], result)
+        filled = await ex.step("allocate", _value(S.apply_weight_split, state, result.get("items") or []))
     else:
         S.record_scale_photo(state, stored[0], None)
     await ex.step("result", ctx.save())
@@ -224,7 +226,11 @@ async def _scale_photo(ctx: StepContext) -> None:
     weight = S.weight_summary(state)
     read_ok = weight["scale_g"] is not None
     status = "pass" if read_ok and weight["scale_status"] != "mismatch" else "alert" if read_ok else "fail"
-    summary = f"{weight['scale_g']:.2f} g on the machine" if read_ok else "Display not readable"
+    summary = (
+        f"{weight['scale_g']:.2f} g on the machine, split across {filled} ornament(s)" if read_ok and filled
+        else f"{weight['scale_g']:.2f} g on the machine" if read_ok
+        else "Display not readable"
+    )
     await ex.finish(status if ctx.ai else "not_checked", summary)
     await ctx.push_state()
     await ctx.say("scale", {
@@ -232,6 +238,8 @@ async def _scale_photo(ctx: StepContext) -> None:
         "scale_g": weight["scale_g"],
         "entered_g": weight["entered_g"],
         "unweighed": weight["unweighed"],
+        "apportioned": filled,
+        "items": len(state["inventory"]),
         "differs": weight["scale_status"] == "mismatch",
         "diff_g": weight["scale_diff_g"],
         "first_issue": (result or {}).get("issues", [""])[0] if (result or {}).get("issues") else "",
@@ -250,7 +258,10 @@ async def _measure(ctx: StepContext) -> None:
     missing = S.unweighed_items(state)
     if missing:
         names = ", ".join(r["name"] for r in missing[:3]) + ("…" if len(missing) > 3 else "")
-        raise S.WorkflowError(f"Enter the weight of {len(missing)} item(s) ({names}) before requesting the readings.")
+        raise S.WorkflowError(
+            f"{len(missing)} ornament(s) have no weight yet ({names}). Upload the weighing-machine "
+            "photo, or type the weights on the pledge list, before requesting the readings."
+        )
 
     ex = ExecRun(ctx, "weight", STEPS.WEIGHT_STEPS)
     try:
@@ -450,10 +461,7 @@ async def _report(ctx: StepContext) -> None:
 
 def _issue_loan_account(state: dict) -> Optional[str]:
     """Open the gold loan account for a sanctioned application (portal-issued running number)."""
-    issued = S.record_loan_account(state, store.next_account_number(state["loan"].get("branch", "")))
-    if issued:
-        cbs.attach_account(state["loan"].get("customer_id", ""), issued)
-    return issued
+    return S.record_loan_account(state, store.next_account_number(state["loan"].get("branch", "")))
 
 
 def _persist_report(state: dict) -> None:

@@ -12,7 +12,8 @@ from sqlalchemy import select, text
 
 from app.db import models as M
 from app.db.base import Base, engine, session_scope
-from app.db.seed_data import CUSTOMERS, GOLD_RATES
+from app.auth import hash_password
+from app.db.seed_data import CUSTOMERS, GOLD_RATES, RETIRED_ACCOUNTS, USERS
 from app.settings import Settings
 
 logger = logging.getLogger("glportal.db")
@@ -50,7 +51,7 @@ def migrate() -> None:
 
 def seed() -> dict:
     """Insert reference data / default settings only where missing. Returns a summary."""
-    added = {"customers": 0, "kyc_backfilled": 0, "gold_rates": 0, "settings": False}
+    added = {"customers": 0, "kyc_backfilled": 0, "gold_rates": 0, "users": 0, "retired": 0, "settings": False}
     with session_scope() as db:
         for carat, rate in GOLD_RATES.items():
             if not db.get(M.GoldRate, carat):
@@ -90,6 +91,22 @@ def seed() -> dict:
                 )
             db.add(cust)
             added["customers"] += 1
+
+        for u in USERS:
+            if db.scalar(select(M.User).where(M.User.email == u["email"])):
+                continue
+            db.add(M.User(
+                email=u["email"], name=u["name"], role=u["role"], branch=u["branch"],
+                password_hash=hash_password(u["password"]),
+            ))
+            added["users"] += 1
+
+        # Customers seeded by an earlier version that are no longer part of the demo set.
+        for account in RETIRED_ACCOUNTS:
+            stale = db.scalar(select(M.Customer).where(M.Customer.account_number == account))
+            if stale is not None:
+                db.delete(stale)
+                added["retired"] += 1
 
         row = db.get(M.Setting, 1)
         if row is None:

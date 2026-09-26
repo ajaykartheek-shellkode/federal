@@ -47,6 +47,14 @@ FRONTEND_ORIGINS: list[str] = [
 # Kept for backwards compatibility with older imports.
 FRONTEND_ORIGIN: str = FRONTEND_ORIGINS[0] if FRONTEND_ORIGINS else "http://localhost:3000"
 
+# --------------------------------------------------------------------------- Auth
+# Secret used to sign staff session cookies. Set a long random value in every deployment —
+# changing it signs everyone out, which is also the fastest way to revoke every session.
+AUTH_SECRET: str = os.environ.get("AUTH_SECRET", "gl-portal-dev-secret-change-me")
+
+# How long a sign-in lasts before the assessor has to enter their password again (seconds).
+AUTH_TTL_S: int = int(os.environ.get("AUTH_TTL_S", str(12 * 60 * 60)))
+
 # --------------------------------------------------------------------------- Database
 # Local PostgreSQL (Homebrew, trust auth). Override for other environments.
 DATABASE_URL: str = os.environ.get("DATABASE_URL", "postgresql+psycopg://ajay@localhost:5432/gl_portal")

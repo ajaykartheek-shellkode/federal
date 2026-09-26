@@ -36,11 +36,11 @@ export const BotMessage = memo(function BotMessage({ item, showAvatar }: { item:
             {item.samples.map((s) => (
               <button
                 key={s.account_number}
-                disabled={!!state.busy || !!state.session}
-                onClick={() => start(s.account_number)}
+                disabled={!!state.busy || !!state.session || !s.mobile}
+                onClick={() => s.mobile && start(s.mobile)}
                 className="group flex items-center gap-1.5 rounded-full border border-brand-200 bg-surface px-2.5 py-1 text-xs font-semibold text-brand-700 transition-colors hover:border-brand-400 hover:bg-brand-50 disabled:opacity-50"
               >
-                <span className="font-mono">{s.account_number}</span>
+                <span className="font-mono">{s.mobile || s.account_number}</span>
                 <span className="font-normal text-ink-muted">· {s.customer_name}</span>
               </button>
             ))}

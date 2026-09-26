@@ -50,8 +50,9 @@ function Reconciliation({ session }: { session: SessionView }) {
   const w = session.weight;
   const locked = session.workflow_state === "done";
   const settled = w.scale_status === "match" || w.scale_overridden;
+  const apportioned = session.inventory.some((r) => r.weight_source === "ai");
 
-  let machineCaption: ReactNode = "Upload the machine photo, or type the total";
+  let machineCaption: ReactNode = "Upload the machine photo — I'll split the total across the ornaments";
   if (w.scale_source === "photo") {
     machineCaption = (
       <>
@@ -70,12 +71,14 @@ function Reconciliation({ session }: { session: SessionView }) {
       <div className="grid gap-3 md:grid-cols-3">
         <Tile
           icon="gem"
-          label="Entered per item"
+          label="Per ornament"
           value={formatWeight(w.entered_g)}
           caption={
             w.unweighed.length
               ? `${w.unweighed.length} still to weigh · ${w.unweighed.slice(0, 2).join(", ")}`
-              : `${plural(session.stats.items, "ornament")} weighed at the counter`
+              : apportioned
+                ? `Split across ${plural(session.stats.items, "ornament")} — correct any on the pledge list`
+                : `${plural(session.stats.items, "ornament")} weighed at the counter`
           }
           tone={w.unweighed.length ? "warn" : "ok"}
         />
@@ -126,9 +129,11 @@ function Reconciliation({ session }: { session: SessionView }) {
             <Icon name={w.scale_overridden ? "pen" : settled ? "checkCircle" : "alert"} size={14} className="shrink-0" />
             <span className="min-w-0 flex-1 font-semibold">
               {w.scale_status === "match" &&
-                `The machine agrees with the weights entered (tolerance ±${formatWeight(w.tolerance_g)})`}
+                (apportioned
+                  ? `The per-ornament weights add up to the machine total (tolerance ±${formatWeight(w.tolerance_g)})`
+                  : `The machine agrees with the weights entered (tolerance ±${formatWeight(w.tolerance_g)})`)}
               {w.scale_status === "mismatch" &&
-                `The machine differs from the weights entered by ${formatWeight(Math.abs(w.scale_diff_g ?? 0))} (tolerance ±${formatWeight(w.tolerance_g)})`}
+                `The machine differs from the per-ornament weights by ${formatWeight(Math.abs(w.scale_diff_g ?? 0))} (tolerance ±${formatWeight(w.tolerance_g)})`}
               {w.scale_status === "missing" && "The machine display could not be read — type the total instead"}
               {w.scale_overridden && " — accepted by the assessor"}
             </span>
@@ -164,10 +169,10 @@ function MeasurePrompt({ session }: { session: SessionView }) {
           <Icon name="cpu" size={19} />
         </span>
         <div>
-          <p className="text-sm font-semibold text-ink-2">Next: weigh each ornament</p>
+          <p className="text-sm font-semibold text-ink-2">Next: the weighing machine</p>
           <p className="text-xs text-ink-muted">
-            Once the collateral photo has listed the ornaments, enter each weight, photograph the machine total, then ask the
-            CaratMeter for the purity.
+            Once the collateral photo has listed the ornaments, put them all on the machine and upload the photo — I read the
+            total and give each ornament its weight, then the CaratMeter assays them.
           </p>
         </div>
       </div>
@@ -187,19 +192,26 @@ function MeasurePrompt({ session }: { session: SessionView }) {
       </span>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-bold text-ink">
-          {ready ? "Ask the CaratMeter for the purity" : `Weigh the remaining ${w.unweighed.length} ornament${w.unweighed.length === 1 ? "" : "s"} first`}
+          {ready
+            ? "Ask the CaratMeter for the purity"
+            : session.scale
+              ? `Weigh the remaining ${w.unweighed.length} ornament${w.unweighed.length === 1 ? "" : "s"} first`
+              : "Upload the weighing-machine photo first"}
         </p>
         <p className="mt-0.5 text-xs leading-relaxed text-ink-2">
           One request for this loan application sends every ornament id and returns each assay, graded against the valuation
-          table and checked against the weight you entered (±{formatWeight(w.item_tolerance_g)} · {w.purity_tolerance_pct} pts margin).
+          table and checked against each ornament&apos;s weight (±{formatWeight(w.item_tolerance_g)} · {w.purity_tolerance_pct} pts margin).
         </p>
       </div>
       <span className="flex flex-wrap gap-2">
-        {!session.scale && (
-          <Button variant="secondary" icon="weighScale" disabled={!!state.busy} onClick={() => openDialog({ kind: "scale-photo" })}>
-            Machine photo
-          </Button>
-        )}
+        <Button
+          variant={session.scale ? "secondary" : "gold"}
+          icon="weighScale"
+          disabled={!!state.busy}
+          onClick={() => openDialog({ kind: "scale-photo" })}
+        >
+          {session.scale ? "Re-shoot machine" : "Machine photo"}
+        </Button>
         <Button variant="gold" icon="cpu" disabled={!!state.busy || !ready} onClick={() => runStep("measure")}>
           Fetch purity
         </Button>
@@ -225,7 +237,7 @@ export default function WeightPurityCard({ session }: { session: SessionView }) 
         title="Weight & purity"
         subtitle={
           <span className="flex flex-wrap items-center gap-x-2">
-            <span>Weights entered here · machine photo for the total · {device?.model || session.caratmeter.model}</span>
+            <span>Machine photo gives every weight · correct any on the pledge list · {device?.model || session.caratmeter.model}</span>
             <span className="font-mono">· {device?.device_id || session.caratmeter.device_id}</span>
             <span className="inline-flex items-center gap-1">
               · <span className="h-1.5 w-1.5 rounded-full bg-ok" /> {session.caratmeter.mode === "mock" ? "Simulated device" : "Device gateway"}

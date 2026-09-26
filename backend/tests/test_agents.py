@@ -63,15 +63,44 @@ def test_scale_agent_keeps_only_plausible_readings():
     from app.agents import scale as SC
     from app.schemas import ScaleResult
 
-    good = SC._normalize(ScaleResult(status="pass", reading_visible=True, weight_g=90.0249, reading_text="  90.02   g "))
+    good = SC._normalize(ScaleResult(status="pass", reading_visible=True, weight_g=90.0249, reading_text="  90.02   g "), [])
     assert (good.weight_g, good.reading_text) == (90.025, "90.02 g")
     for bad in (
         ScaleResult(status="pass", reading_visible=True, weight_g=float("nan")),
         ScaleResult(status="pass", reading_visible=True, weight_g=-4, reading_text="-4 g"),
         ScaleResult(status="pass", reading_visible=False, weight_g=12.0, reading_text="12 g"),
     ):
-        out = SC._normalize(bad)
+        out = SC._normalize(bad, [])
         assert (out.reading_visible, out.weight_g, out.reading_text) == (False, None, "")
+
+
+def test_scale_agent_balances_the_split_onto_the_display_total():
+    from app.agents import scale as SC
+    from app.schemas import ItemWeight, ScaleResult
+
+    inventory = [{"id": "item-1", "name": "Gold Bangle"}, {"id": "item-2", "name": "Gold Ring"},
+                 {"id": "item-3", "name": "Gold Chain"}]
+
+    def split(items, total=100.0):
+        out = SC._normalize(ScaleResult(status="pass", reading_visible=True, weight_g=total,
+                                        reading_text=f"{total} g", items=items), inventory)
+        return {i.id: i.weight_g for i in out.items}
+
+    # Proportions are the agent's; the arithmetic is ours — the shares always add up to the total.
+    scaled = split([ItemWeight(id="item-1", weight_g=30), ItemWeight(id="item-2", weight_g=10),
+                    ItemWeight(id="item-3", weight_g=20)])
+    assert scaled == {"item-1": 50.0, "item-2": 16.67, "item-3": 33.33}
+    assert round(sum(scaled.values()), 2) == 100.0
+
+    # An ornament the agent skipped still gets a share; one it invented is dropped.
+    patched = split([ItemWeight(id="item-1", weight_g=40), ItemWeight(id="nope", weight_g=25)])
+    assert set(patched) == {"item-1", "item-2", "item-3"} and round(sum(patched.values()), 2) == 100.0
+    assert patched["item-1"] > patched["item-2"] == patched["item-3"]
+
+    assert split([], total=50.0)  # nothing usable → an even share each, still summing to the total
+    # A split nowhere near the display total means the list was misread, so it is dropped.
+    assert split([ItemWeight(id="item-1", weight_g=1), ItemWeight(id="item-2", weight_g=1),
+                  ItemWeight(id="item-3", weight_g=1)], total=900.0) == {}
 
 
 def _doc(no, status="pass", **kw):
@@ -137,7 +166,7 @@ def test_imageprep_keeps_original_format_on_decode_failure():
 def test_journey_drafts_are_fact_exact():
     listed = conversation.draft("collateral", {"ai_enabled": True, "total": 3, "names": ["Gold Chain", "Gold Bangle", "Silver Anklet"]})
     assert "3 ornaments" in listed and "Gold Chain, Gold Bangle, Silver Anklet" in listed
-    assert "enter each item's weight" in listed
+    assert "upload the machine photo" in listed
 
     empty = conversation.draft("collateral", {"ai_enabled": True, "total": 0, "names": []})
     assert "couldn't make out any ornaments" in empty
@@ -145,6 +174,10 @@ def test_journey_drafts_are_fact_exact():
 
     machine = conversation.draft("scale", {"ai_enabled": True, "scale_g": 33.05, "entered_g": 31.5, "differs": True, "diff_g": 1.55})
     assert "33.05 g" in machine and "31.50 g" in machine and "1.55 g" in machine
+
+    split = conversation.draft("scale", {"ai_enabled": True, "scale_g": 33.05, "entered_g": 33.05,
+                                         "apportioned": 3, "items": 3, "measured": False})
+    assert "33.05 g" in split and "3 ornament(s)" in split and "CaratMeter" in split
 
     unread = conversation.draft("scale", {"ai_enabled": True, "scale_g": None, "first_issue": "Display not readable"})
     assert "Enter the total" in unread and "Display not readable" in unread

@@ -1,5 +1,10 @@
+import RequireAuth from "@/components/auth/RequireAuth";
 import AppShell from "@/components/shell/AppShell";
 
 export default function Page() {
-  return <AppShell />;
+  return (
+    <RequireAuth>
+      <AppShell />
+    </RequireAuth>
+  );
 }

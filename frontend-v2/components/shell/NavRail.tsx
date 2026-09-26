@@ -1,6 +1,8 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { useState } from "react";
+import { useAuth } from "@/components/providers/AuthProvider";
 import { useVerification } from "@/components/providers/VerificationProvider";
 import Icon, { type IconName } from "@/components/ui/Icon";
 import { cn } from "@/lib/format";
@@ -17,6 +19,8 @@ const ITEMS: { view: NavView; icon: IconName; label: string }[] = [
 
 export default function NavRail() {
   const { state, setView } = useVerification();
+  const { user, signOut } = useAuth();
+  const [menu, setMenu] = useState(false);
 
   return (
     <nav aria-label="Primary" className="relative z-20 flex w-[76px] flex-col items-center bg-brand-rail py-4 text-white">
@@ -46,11 +50,45 @@ export default function NavRail() {
         })}
       </div>
       <div className="flex-1" />
-      <div
-        className="flex h-9 w-9 items-center justify-center rounded-full bg-gold-500 text-xs font-bold text-brand-900 ring-2 ring-white/20"
-        title="Branch assessor"
-      >
-        BA
+      <div className="relative w-full px-2 pb-1">
+        {menu && (
+          <>
+            <button type="button" className="fixed inset-0 z-10 cursor-default" aria-label="Close menu" onClick={() => setMenu(false)} />
+            <motion.div
+              initial={{ opacity: 0, y: 6, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={spring}
+              className="absolute bottom-full left-2 z-20 mb-2 w-60 origin-bottom-left rounded-2xl border border-line bg-surface p-3 text-left shadow-lift"
+            >
+              <p className="truncate text-sm font-semibold text-ink">{user?.name}</p>
+              <p className="truncate text-xs text-ink-muted">{user?.role}</p>
+              <p className="mt-0.5 truncate font-mono text-2xs text-ink-faint">{user?.email}</p>
+              <p className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-brand-50 px-2 py-1 font-mono text-2xs font-semibold text-brand-700">
+                <Icon name="bank" size={11} /> {user?.branch || "—"}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setMenu(false);
+                  void signOut();
+                }}
+                className="mt-3 flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-sm font-semibold text-ink-2 transition-colors hover:bg-bad-soft hover:text-bad"
+              >
+                <Icon name="logout" size={16} /> Sign out
+              </button>
+            </motion.div>
+          </>
+        )}
+        <button
+          type="button"
+          onClick={() => setMenu((v) => !v)}
+          aria-haspopup="menu"
+          aria-expanded={menu}
+          title={user ? `${user.name} · ${user.role}` : "Account"}
+          className="mx-auto flex h-9 w-9 items-center justify-center rounded-full bg-gold-500 text-xs font-bold text-brand-900 ring-2 ring-white/20 transition-transform hover:scale-105"
+        >
+          {user?.initials || "··"}
+        </button>
       </div>
     </nav>
   );

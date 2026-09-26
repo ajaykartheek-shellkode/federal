@@ -1,9 +1,10 @@
 """CBS (core banking) customer source — backed by PostgreSQL seed data.
 
-A fresh gold loan starts as an application, so there is no loan account yet: ``find_customer``
-looks the customer up by CIF, mobile or ID proof (and still accepts an account number, which is
-how a renewal or a release starts). It returns ``{loan_context, rate_table, ornaments}``; the
-ornaments are legacy v1 data and are ignored by the conversational flow.
+A journey starts from the customer's mobile number: a fresh gold loan has no account yet, so
+``find_customer_by_mobile`` is what the portal looks up before opening an application.
+``find_customer`` is the wider lookup (account, CIF, mobile or ID proof) still used by the
+report screens. Both return ``{loan_context, rate_table, ornaments}``; the ornaments are legacy
+v1 data and are ignored by the conversational flow.
 """
 
 from __future__ import annotations
@@ -12,14 +13,8 @@ from typing import List, Optional
 
 from sqlalchemy import func, select
 
-from app import store
 from app.db import models as M
 from app.db.base import session_scope
-
-# A customer the branch onboards at the counter has no loan yet, so the application reference
-# stands in for the account number until one is issued.
-NEW_CUSTOMER_PREFIX = "APP-"
-
 
 def normalize_account(account: Optional[str]) -> str:
     return "".join((account or "").split()).upper()
@@ -64,6 +59,16 @@ def _serialize(cust: M.Customer, rate_table: dict) -> dict:
     }
 
 
+def find_customer_by_mobile(mobile: Optional[str]) -> Optional[dict]:
+    """The customer on this mobile number. Numbers are stored spaced, so compare on digits."""
+    digits = digits_of(mobile)
+    if len(digits) < 10:
+        return None
+    with session_scope() as db:
+        cust = next((r for r in db.scalars(select(M.Customer)).all() if digits_of(r.mobile) == digits), None)
+        return _serialize(cust, _rate_table(db)) if cust else None
+
+
 def find_customer(query: Optional[str]) -> Optional[dict]:
     """Find the customer by loan account, CIF, mobile or ID proof. None when nothing matches."""
     wanted = normalize_account(query)
@@ -104,46 +109,10 @@ def fetch_customer(account_number: Optional[str] = None, strict: bool = False) -
         return _serialize(cust, _rate_table(db))
 
 
-def create_customer(
-    *,
-    name: str,
-    mobile: str,
-    id_number: str,
-    address: str,
-    branch: str,
-    application_no: str,
-) -> dict:
-    """Onboard a walk-in customer into CBS and return them in ``find_customer`` shape."""
+def sample_accounts(limit: int = 5) -> List[dict]:
+    """A few customers to offer when a mobile number is not found (demo convenience)."""
     with session_scope() as db:
-        cust = M.Customer(
-            account_number=application_no,  # replaced by the loan account once it is issued
-            customer_id=f"CBS{store.next_sequence('customer'):06d}",
-            customer_name=" ".join((name or "").split())[:200],
-            mobile=" ".join((mobile or "").split())[:24],
-            scenario="Fresh Loan",
-            branch=branch,
-            id_number=" ".join((id_number or "").split())[:64],
-            address=" ".join((address or "").split())[:500],
-        )
-        db.add(cust)
-        db.flush()
-        return _serialize(cust, _rate_table(db))
-
-
-def attach_account(customer_id: str, account_number: str) -> bool:
-    """Record the issued loan account against a customer onboarded at the counter."""
-    with session_scope() as db:
-        cust = db.scalar(select(M.Customer).where(M.Customer.customer_id == customer_id))
-        if cust is None or not (cust.account_number or "").startswith(NEW_CUSTOMER_PREFIX):
-            return False  # seeded customers keep the account they already have
-        cust.account_number = account_number
-        return True
-
-
-def sample_accounts(limit: int = 4) -> List[dict]:
-    """A few customers to suggest when a lookup fails (demo convenience)."""
-    with session_scope() as db:
-        rows = db.scalars(select(M.Customer).where(M.Customer.account_number.like("GL%")).order_by(M.Customer.id).limit(limit)).all()
+        rows = db.scalars(select(M.Customer).order_by(M.Customer.id).limit(limit)).all()
         return [
             {
                 "account_number": r.account_number,
@@ -151,6 +120,7 @@ def sample_accounts(limit: int = 4) -> List[dict]:
                 "mobile": r.mobile,
                 "customer_name": r.customer_name,
                 "scenario": r.scenario,
+                "branch": r.branch,
             }
             for r in rows
         ]

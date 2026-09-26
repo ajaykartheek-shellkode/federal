@@ -279,7 +279,7 @@ def test_machine_photo_reconciles_with_the_entered_weights(listed):
     S.record_scale_photo(listed, {"asset_id": "s2", "filename": "scale2.jpg"}, scale_result(35.0))
     w = S.weight_summary(listed)
     assert w["scale_status"] == "mismatch" and w["scale_diff_g"] == 2.0
-    assert any("Weighing machine reads 35 g against 33 g entered" in r["text"] for r in S.review_reasons(listed))
+    assert any("Weighing machine reads 35 g against 33 g across the pledge list" in r["text"] for r in S.review_reasons(listed))
 
     entry = S.apply_override(listed, "scale", "scale", "Tray left on the pan, re-checked by hand")
     assert not S.is_correction(entry)

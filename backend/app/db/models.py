@@ -186,3 +186,20 @@ class Setting(Base):
     weight_tolerance_g: Mapped[float] = mapped_column(Float, default=0.10)
     purity_tolerance_pct: Mapped[float] = mapped_column(Float, default=0.5)
     damage_deduction: Mapped[str] = mapped_column(String(16), default="tenths")
+
+
+# --------------------------------------------------------------------------- staff accounts
+class User(Base):
+    """A branch staff member who signs in to the portal."""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    email: Mapped[str] = mapped_column(String(160), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    role: Mapped[str] = mapped_column(String(48), default="Branch assessor")
+    branch: Mapped[str] = mapped_column(String(120), default="")
+    password_hash: Mapped[str] = mapped_column(String(255), default="")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

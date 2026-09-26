@@ -70,7 +70,7 @@ export function OverrideDialog({ open, target, refId, onClose }: { open: boolean
       <Context
         thumb={w.scale_asset_id}
         name="Weighing-machine total"
-        meta={w.scale_g !== null ? `Machine ${formatWeight(w.scale_g)} · entered ${formatWeight(w.entered_g)}` : "No total captured"}
+        meta={w.scale_g !== null ? `Machine ${formatWeight(w.scale_g)} · pledge list ${formatWeight(w.entered_g)}` : "No total captured"}
       >
         {w.scale_status === "mismatch" && (
           <span className="text-xs text-warn">

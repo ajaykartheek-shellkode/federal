@@ -1,9 +1,8 @@
-"""Seed CBS reference data: gold rates + customers with pledged-ornament inventories.
+"""Seed reference data: staff logins, gold rates, and the five CBS customers.
 
-Each account number returns a distinct record. All names, ID numbers and addresses are
-fictional demo data. The original demo customer (10056100070317, Ring + Chain) is kept.
-Ornaments carry a material (gold by default; Lakshmi Iyer also pledges silver) whose purity
-grade is the CBS "carat" value (e.g. "22" → 22K gold, "925" → sterling silver).
+All names, mobile numbers, ID numbers and addresses are fictional demo data. A customer is
+found by mobile number at the start of a journey; the ornaments held here are legacy v1 data
+(the pledge list is built from the collateral photo) and are kept only for the v1 screen.
 """
 
 from __future__ import annotations
@@ -40,19 +39,6 @@ CUSTOMERS = [
             _orn("ring-2", "Gold Ring", "18", 5),
             _orn("ring-3", "Gold Ring", "18", 5, dmg=True, dcount=1,
                  ddetails="Light surface scratch on band", dpct=4),
-        ],
-    },
-    {
-        "account_number": "10056100070317",
-        "mobile": "99458 70317",
-        "customer_id": "23374600",
-        "customer_name": "CIUQXGZGZXFZ D M",
-        "scenario": "Fresh Loan",
-        "branch": "FED-BLR-014",
-        "ornaments": [
-            _orn("ring-1", "Ring", "22", 4, dmg=True, dcount=1,
-                 ddetails="Crack in the head and one stone missing", dpct=10),
-            _orn("chain-1", "Chain", "22", 24),
         ],
     },
     {
@@ -119,33 +105,35 @@ CUSTOMERS = [
             _orn("ring-2", "Gold Ring", "18", 4),
         ],
     },
+]
+
+
+# Customers seeded by earlier versions that are no longer part of the demo set. ``init_db``
+# removes these rows so every environment shows the same five.
+RETIRED_ACCOUNTS = ["10056100070317", "GL2024001067", "GL2024001210"]
+
+# Branch staff who can sign in to the portal. Passwords are hashed on first seed; changing one
+# here does not change an account that already exists.
+USERS = [
     {
-        "account_number": "GL2024001067",
-        "mobile": "98400 61067",
-        "customer_id": "CBS100067",
-        "customer_name": "Kavitha Rao",
-        "scenario": "Renewal",
-        "branch": "FED-CHN-009",
-        "id_number": "5582 6601 9043",
-        "address": "18 Cathedral Road, Gopalapuram, Chennai, Tamil Nadu 600086",
-        "ornaments": [
-            _orn("necklace-1", "Gold Necklace", "22", 40),
-            _orn("earring-1", "Gold Earrings", "22", 7, qty=2),
-        ],
+        "email": "assessor@federalbank.co.in",
+        "name": "Divya Raghavan",
+        "role": "Branch assessor",
+        "branch": "FED-MUM-001",
+        "password": "Federal@2026",
     },
     {
-        "account_number": "GL2024001210",
-        "mobile": "94950 41210",
-        "customer_id": "CBS100210",
-        "customer_name": "Lakshmi Iyer",
-        "scenario": "Fresh Loan",
-        "branch": "FED-TVM-004",
-        "id_number": "8843 1127 6605",
-        "address": "3 Vazhuthacaud, Thiruvananthapuram, Kerala 695014",
-        "ornaments": [
-            _orn("chain-1", "Gold Chain", "22", 20),
-            _orn("coin-1", "Gold Coin", "24", 10),
-            _orn("anklet-1", "Silver Anklet", "925", 64, qty=2, material="silver"),
-        ],
+        "email": "officer@federalbank.co.in",
+        "name": "Nikhil Menon",
+        "role": "Gold loan officer",
+        "branch": "FED-DEL-007",
+        "password": "Federal@2026",
+    },
+    {
+        "email": "manager@federalbank.co.in",
+        "name": "Farida Sheikh",
+        "role": "Branch manager",
+        "branch": "FED-COK-006",
+        "password": "Federal@2026",
     },
 ]

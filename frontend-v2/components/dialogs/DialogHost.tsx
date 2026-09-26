@@ -6,7 +6,6 @@ import ReportOverlay from "@/components/report/ReportOverlay";
 import type { DialogState } from "@/lib/store";
 import { EditItemDialog, NewSessionDialog, OverrideDialog } from "./AuditDialogs";
 import { AddItemDialog, RemoveItemDialog, ScalePhotoDialog } from "./InventoryDialogs";
-import NewCustomerDialog from "./NewCustomerDialog";
 import CollateralDialog from "./CollateralDialog";
 import DamageDialog from "./DamageDialog";
 import DocumentDialog from "./DocumentDialog";
@@ -36,7 +35,6 @@ export default function DialogHost() {
       {override && <OverrideDialog open={is("override")} target={override.target} refId={override.ref} onClose={closeDialog} />}
       {edit && <EditItemDialog open={is("edit")} refId={edit.ref} onClose={closeDialog} />}
       <ScaleDialog open={is("scale")} onClose={closeDialog} />
-      <NewCustomerDialog open={is("new-customer")} onClose={closeDialog} />
       <ScalePhotoDialog open={is("scale-photo")} onClose={closeDialog} />
       <AddItemDialog open={is("add-item")} onClose={closeDialog} />
       {removeItem && <RemoveItemDialog open={is("remove-item")} refId={removeItem.ref} onClose={closeDialog} />}

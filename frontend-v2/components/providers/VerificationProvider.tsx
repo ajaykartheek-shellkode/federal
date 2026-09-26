@@ -6,7 +6,6 @@ import {
   addInventoryItem,
   askAgent,
   buildStepForm,
-  openApplicationFor,
   editItem as apiEditItem,
   enterScaleReading,
   getSession,
@@ -16,7 +15,6 @@ import {
   startSession,
   streamStep,
   type ItemChanges,
-  type NewCustomer,
   type NewItem,
   type StepPayload,
 } from "@/lib/api";
@@ -27,14 +25,13 @@ import { WORKFLOW_STEPS } from "@/lib/format";
 
 const STORAGE_KEY = "glportal.session";
 const WELCOME =
-  "Welcome to <strong>GL Portal</strong>. Enter the customer's <strong>CIF, mobile or ID number</strong> — or an existing " +
-  "loan account — and I'll open the verification from CBS.";
+  "Welcome to <strong>GL Portal</strong>. Enter the customer's <strong>mobile number</strong> and I'll find them in CBS " +
+  "and open the verification.";
 
 interface VerificationApi {
   state: AppState;
   session: SessionView | null;
   start: (account: string) => Promise<void>;
-  openApplication: (customer: NewCustomer) => Promise<boolean>;
   runStep: (action: StepAction, payload?: StepPayload) => Promise<boolean>;
   send: (text: string) => Promise<void>;
   override: (target: OverrideTarget, ref: string, justification: string) => Promise<boolean>;
@@ -148,8 +145,10 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
       try {
         const { session } = await getSession(saved);
         setSession(session);
+        const reference = session.loan.account_number || session.application.reference;
         bot(
-          `Welcome back. I've restored the verification for <strong>${session.loan.customer_name}</strong> (${session.loan.account_number}) at ${stepLabel(session)}.`
+          `Welcome back. I've restored the verification for <strong>${session.loan.customer_name}</strong>` +
+            `${reference ? ` (${reference})` : ""} at ${stepLabel(session)}.`
         );
       } catch (err) {
         // Forget the saved session only if it no longer exists — not on a network blip or 5xx.
@@ -157,7 +156,7 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
           storage("remove");
           bot(WELCOME);
         } else {
-          bot("I couldn't reach the GL Portal service to restore your verification. Refresh to try again, or enter a loan account number to start a new one.");
+          bot("I couldn't reach the GL Portal service to restore your verification. Refresh to try again, or enter a customer's mobile number to start a new one.");
         }
       }
     });
@@ -166,8 +165,8 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
 
   // ---- actions ---------------------------------------------------------------
   const start = useCallback(
-    async (account: string) => {
-      const trimmed = account.trim();
+    async (mobile: string) => {
+      const trimmed = mobile.trim();
       if (!trimmed) return;
       dispatch({ type: "user", text: trimmed });
       await exclusive("start", async () => {
@@ -178,35 +177,12 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
           bot(res.message);
         } catch (err) {
           if (err instanceof ApiError && err.status === 404) {
-            bot(
-              `${err.message} Check the number, pick one of these, or <strong>open an application for a new customer</strong>.`,
-              (err.body.samples as SampleAccount[]) ?? []
-            );
+            bot(`${err.message} Check the number, or pick one of these customers.`, (err.body.samples as SampleAccount[]) ?? []);
             return;
           }
-          handleApiError(err, "Loading the account");
+          handleApiError(err, "Finding the customer");
         }
       });
-    },
-    [bot, exclusive, handleApiError, setSession]
-  );
-
-  const openApplication = useCallback(
-    async (customer: NewCustomer) => {
-      let ok = false;
-      await exclusive("start", async () => {
-        try {
-          const res = await openApplicationFor(customer);
-          setSession(res.session);
-          dispatch({ type: "view", view: "verify" });
-          dispatch({ type: "user", text: `New customer · ${customer.name}` });
-          bot(res.message);
-          ok = true;
-        } catch (err) {
-          handleApiError(err, "Opening the application");
-        }
-      });
-      return ok;
     },
     [bot, exclusive, handleApiError, setSession]
   );
@@ -285,21 +261,14 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
       const intent = parseIntent(trimmed, sessionRef.current);
       switch (intent.kind) {
         case "start":
-          return start(intent.account);
-        case "need-account":
+          return start(intent.mobile);
+        case "need-mobile":
           dispatch({ type: "user", text: trimmed });
-          bot(
-            "Please enter the customer's <strong>CIF, mobile or ID number</strong> — or an existing loan account — to begin " +
-              "(for example, CBS100234, 98200 41234 or GL2024001234)."
-          );
+          bot("Please enter the customer's <strong>10-digit mobile number</strong> to begin — for example 98200 41234.");
           return;
         case "open":
           dispatch({ type: "user", text: trimmed });
           dispatch({ type: "dialog", dialog: { kind: intent.dialog } });
-          return;
-        case "new-customer":
-          dispatch({ type: "user", text: trimmed });
-          dispatch({ type: "dialog", dialog: { kind: "new-customer" } });
           return;
         case "show-items": {
           const session = sessionRef.current;
@@ -430,7 +399,6 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
       state,
       session: state.session,
       start,
-      openApplication,
       runStep,
       send,
       override,
@@ -448,7 +416,7 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
       toast,
       dismissToast: (id) => dispatch({ type: "dismiss-toast", id }),
     }),
-    [state, start, openApplication, runStep, send, override, editItem, setScaleReading, setWeight, addItem, removeItem, revealItems, resume, reset, toast]
+    [state, start, runStep, send, override, editItem, setScaleReading, setWeight, addItem, removeItem, revealItems, resume, reset, toast]
   );
 
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;

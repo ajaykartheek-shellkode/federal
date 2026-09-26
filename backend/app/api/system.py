@@ -12,16 +12,20 @@ import asyncio
 import logging
 import time
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse, Response
 
 from app import store
+from app.api.auth import require_user
 from app.bedrock.client import get_client
 from app.config import AWS_REGION, BEDROCK_MODEL_ID
 from app.settings import SCENARIOS, SettingsPatch, get_settings, update_settings
 
 logger = logging.getLogger("glportal.api.system")
 router = APIRouter(prefix="/api", tags=["system"])
+
+# /api/health is public (deploy health check); everything else needs a signed-in assessor.
+signed_in = [Depends(require_user)]
 
 _INLINE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"}
 _health_cache: dict = {"at": 0.0, "body": None, "status": 200}
@@ -54,19 +58,19 @@ async def health():
     return JSONResponse(status_code=status, content=body)
 
 
-@router.get("/settings")
+@router.get("/settings", dependencies=signed_in)
 async def read_settings():
     settings = await asyncio.to_thread(get_settings)
     return {"scenarios": SCENARIOS, **settings.model_dump()}
 
 
-@router.put("/settings")
+@router.put("/settings", dependencies=signed_in)
 async def write_settings(patch: SettingsPatch):
     updated = await asyncio.to_thread(update_settings, patch)
     return {"scenarios": SCENARIOS, **updated.model_dump()}
 
 
-@router.get("/assets/{asset_id}")
+@router.get("/assets/{asset_id}", dependencies=signed_in)
 async def get_asset(asset_id: str):
     found = await asyncio.to_thread(store.load_asset, asset_id)
     if not found:

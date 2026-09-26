@@ -104,7 +104,7 @@ export default function ScaleDialog({ open, onClose }: { open: boolean; onClose:
             </div>
           )}
           <div>
-            <Label htmlFor="scale-grams" required hint={`Entered across the items: ${formatWeight(w.entered_g)}`}>
+            <Label htmlFor="scale-grams" required hint={`Across the pledge list: ${formatWeight(w.entered_g)}`}>
               Machine display
             </Label>
             <div className="relative">

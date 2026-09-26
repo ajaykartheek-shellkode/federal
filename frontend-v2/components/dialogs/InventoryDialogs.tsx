@@ -109,7 +109,7 @@ export function AddItemDialog({ open, onClose }: { open: boolean; onClose: () =>
         {touched && <FieldError>{errors.quantity || errors.weight}</FieldError>}
         <p className="flex items-start gap-2 rounded-xl bg-brand-50 px-3 py-2 text-xs text-brand-700">
           <Icon name="info" size={14} className="mt-px shrink-0" />
-          Purity comes from the CaratMeter, so leave it — you can weigh the ornament here or in the table.
+          Purity comes from the CaratMeter, so leave it — the weighing-machine photo gives this piece its weight.
         </p>
       </div>
     </Dialog>
@@ -186,7 +186,7 @@ export function RemoveItemDialog({ open, refId, onClose }: { open: boolean; refI
   );
 }
 
-/** The weighing-machine photo: the total weight of everything on the pan. */
+/** The weighing-machine photo: the total on the display, split across the pledge list. */
 export function ScalePhotoDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { session, runStep, state } = useVerification();
   const [file, setFile] = useState<File | null>(null);
@@ -222,17 +222,21 @@ export function ScalePhotoDialog({ open, onClose }: { open: boolean; onClose: ()
       onClose={close}
       icon="weighScale"
       title="Weighing-machine photo"
-      subtitle={`The total of everything on the pan · ${plural(session.stats.items, "ornament")} listed`}
+      subtitle={`I read the display and give each of the ${plural(session.stats.items, "ornament")} its weight`}
       footer={
         <>
           <span className="mr-auto text-xs text-ink-muted">
-            {busy ? "Wait for the current step to finish" : `Entered so far: ${formatWeight(weight.entered_g)}`}
+            {busy
+              ? "Wait for the current step to finish"
+              : weight.entered_g > 0
+                ? `On the pledge list so far: ${formatWeight(weight.entered_g)}`
+                : "Every ornament gets its weight from this photo"}
           </span>
           <Button variant="ghost" onClick={close}>
             Cancel
           </Button>
           <Button variant="primary" icon="sparkles" disabled={!file || busy} onClick={submit}>
-            Read the display
+            Read and split the total
           </Button>
         </>
       }
@@ -262,6 +266,7 @@ export function ScalePhotoDialog({ open, onClose }: { open: boolean; onClose: ()
               "All the pledged ornaments on the pan, nothing else",
               "The display in frame and in focus — no glare",
               "Wait for the reading to settle before the shot",
+              "Ornaments visible too — that's how I split the total",
               "Can't read it? Type the total on the Weight & purity card",
             ].map((tip) => (
               <li key={tip} className="flex gap-2 text-xs leading-snug text-ink-2">

@@ -267,7 +267,7 @@ def _verdict(view: dict) -> Table:
 
     kpis = [
         (str(stats["items"]), "Ornaments"),
-        (grams(stats.get("total_weight")), "Weight entered"),
+        (grams(stats.get("total_weight")), "Total weight"),
         (f"{stats.get('measured', 0)}/{stats['items']}", "Assayed"),
         (inr(totals.get("pledge_amount", stats.get("pledge_amount", 0))), "Pledge (provisional)" if totals.get("is_estimate") else "Pledge amount"),
     ]
@@ -380,7 +380,7 @@ def _collateral(view: dict) -> List:
         ]))
         flow += [strip, Spacer(1, 3 * mm)]
 
-    header = [Paragraph(h, S_TH) for h in ("", "Ornament", "Purity", "Weight entered", "Qty", "Listed", "Damage")]
+    header = [Paragraph(h, S_TH) for h in ("", "Ornament", "Purity", "Weight", "Qty", "Listed", "Damage")]
     rows = [header]
     for it in view["inventory"]:
         damage = next((d for d in view["damages"] if d["ornament_id"] == it["id"]), None)
@@ -433,7 +433,7 @@ def _weight_section(view: dict) -> List:
         else "Entered by the assessor" if source == "assessor" else "Not captured"
     )
     tiles = Table([[
-        tile("Entered per item", grams(weight["entered_g"]), f"{report['stats']['items']} ornaments"),
+        tile("Per ornament", grams(weight["entered_g"]), f"{report['stats']['items']} ornaments"),
         tile("Weighing machine", grams(weight["scale_g"]) if weight.get("scale_g") is not None else "-", scale_caption),
         tile("CaratMeter total", grams(weight["measured_g"]) if weight.get("measured_g") is not None else "-",
              f"{device.get('model') or 'CaratMeter'} · {device.get('device_id') or '-'}"),
@@ -446,15 +446,15 @@ def _weight_section(view: dict) -> List:
 
     status = weight.get("scale_status")
     if status == "match":
-        recon = f"the machine agrees with the entered weights (±{grams(weight['tolerance_g'])})"
+        recon = f"the machine agrees with the per-ornament weights (±{grams(weight['tolerance_g'])})"
     elif status == "mismatch":
-        recon = f"the machine differs from the entered weights by {grams(abs(weight.get('scale_diff_g') or 0))} (tolerance ±{grams(weight['tolerance_g'])})"
+        recon = f"the machine differs from the per-ornament weights by {grams(abs(weight.get('scale_diff_g') or 0))} (tolerance ±{grams(weight['tolerance_g'])})"
     else:
         recon = "no weighing-machine total captured"
     if weight.get("scale_overridden"):
         recon += " — accepted by the assessor"
 
-    header = [Paragraph(h, S_TH) for h in ("Ornament", "Weight entered", "CaratMeter assay", "Diff wt", "Reading", "Rate/g", "LTV", "Pledge")]
+    header = [Paragraph(h, S_TH) for h in ("Ornament", "Weight", "CaratMeter assay", "Diff wt", "Reading", "Rate/g", "LTV", "Pledge")]
     rows = [header]
     for it in view["inventory"]:
         valued = next((v for v in valuation["items"] if v["ornament_id"] == it["id"]), None)
@@ -488,7 +488,7 @@ def _weight_section(view: dict) -> List:
         ("LINEABOVE", (0, -1), (-1, -1), 0.6, LINE),
     ]))
     note = Paragraph(
-        "Valued on the weight entered for each ornament at the rate for the purity the CaratMeter assayed × the "
+        "Valued on each ornament's weight at the rate for the purity the CaratMeter assayed × the "
         f"material LTV, less the damage deduction ({DAMAGE_RULE.get(valuation.get('damage_deduction_mode'), 'per settings')}). "
         + ("Some ornaments are not assayed yet, so the total is provisional. " if totals["is_estimate"] else "")
         + "Rates as configured when the verification started. Indicative — not a sanction.",

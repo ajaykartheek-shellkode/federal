@@ -7,6 +7,7 @@ import type {
   OverviewReport,
   SampleAccount,
   SessionView,
+  StaffUser,
   StepAction,
 } from "./types";
 
@@ -41,6 +42,22 @@ const json = (method: string, data: unknown): RequestInit => ({
   body: JSON.stringify(data),
 });
 
+// ---- staff sign-in ------------------------------------------------------------
+// The session lives in an HttpOnly cookie the browser attaches to every /api call, including
+// the <img> and PDF requests a fetch header could never reach.
+export const signIn = (email: string, password: string) =>
+  request<{ user: StaffUser }>("/api/auth/login", json("POST", { email, password })).then((r) => r.user);
+
+export const signOut = () => request<{ ok: boolean }>("/api/auth/logout", { method: "POST" });
+
+export async function fetchCurrentUser(): Promise<StaffUser | null> {
+  try {
+    return (await request<{ user: StaffUser }>("/api/auth/me")).user;
+  } catch {
+    return null;
+  }
+}
+
 // ---- health -------------------------------------------------------------------
 export interface Health {
   ok: boolean;
@@ -65,19 +82,12 @@ export interface StartResponse {
   message: string;
 }
 
-export const startSession = (account: string) => request<StartResponse>("/api/chat/start", json("POST", { account }));
+/** Journeys start from the customer's mobile number — CBS holds the five demo customers. */
+export const startSession = (mobile: string) => request<StartResponse>("/api/chat/start", json("POST", { mobile }));
 
-export interface NewCustomer {
-  name: string;
-  mobile: string;
-  id_number: string;
-  address: string;
-  branch: string;
-}
-
-/** Open a gold loan application for a customer the branch is onboarding at the counter. */
-export const openApplicationFor = (customer: NewCustomer) =>
-  request<StartResponse>("/api/chat/application", json("POST", customer));
+/** The CBS customers this branch can start a journey for. */
+export const fetchCustomers = () =>
+  request<{ customers: SampleAccount[] }>("/api/chat/customers").then((r) => r.customers);
 
 export const getSession = (sessionId: string) =>
   request<{ session: SessionView }>(`/api/chat/session/${encodeURIComponent(sessionId)}`);

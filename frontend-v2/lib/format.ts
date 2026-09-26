@@ -59,8 +59,8 @@ export const ITEM_META: Record<ItemStatus, { label: string; tone: Tone; hint: st
 
 export const MEASURE_META: Record<MeasurementStatus, { label: string; tone: Tone; hint: string }> = {
   pending: { label: "Not assayed", tone: "neutral", hint: "Fetch the readings from the CaratMeter" },
-  match: { label: "Assayed", tone: "ok", hint: "Purity graded, and the device weight agrees with the weight entered" },
-  weight_mismatch: { label: "Weight differs", tone: "warn", hint: "The device weight is outside tolerance of the weight entered" },
+  match: { label: "Assayed", tone: "ok", hint: "Purity graded, and the device weight agrees with the weight on the pledge list" },
+  weight_mismatch: { label: "Weight differs", tone: "warn", hint: "The device weight is outside tolerance of the weight on the pledge list" },
   ungraded: { label: "Below grades", tone: "warn", hint: "The assayed purity is below every grade configured for this material" },
   mismatch: { label: "Weight & purity", tone: "warn", hint: "The device weight differs and the purity is below every grade" },
   missing: { label: "No reading", tone: "bad", hint: "The CaratMeter returned no usable reading for this ornament" },

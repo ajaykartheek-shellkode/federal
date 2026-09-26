@@ -28,7 +28,19 @@ class _Reply(BaseModel):
 
 
 JOURNEY = (
-    'THE JOURNEY (follow it exactly; never invent a different order): 1) the assessor photographs all pledged ornaments together and the Collateral agent detects each piece — those detections ARE the inventory, and the assessor can rename, add or remove rows; 2) the assessor types the weight of each ornament, uploads a photo of the weighing machine for the total, and one CaratMeter request per loan application returns the purity of every ornament; 3) damage is photographed with a damage percentage; 4) the pledge amount is reviewed; 5) identity documents are cross-verified against the CBS customer record; 6) the report is generated. CBS provides only the customer and KYC details — never an inventory, weight or purity. A fresh loan runs under a loan APPLICATION reference and has no gold loan account number until the report recommends PROCEED, at which point the account is created; a renewal or release verifies a loan account that already exists.'
+    'THE JOURNEY (follow it exactly; never invent a different order): the assessor signs in and '
+    'finds the customer by MOBILE NUMBER — CBS holds only the customer and KYC details, never an '
+    'inventory, weight or purity. Then 1) the assessor photographs all pledged ornaments together '
+    'and the Collateral agent detects each piece — those detections ARE the inventory, and the '
+    'assessor can rename, add or remove rows; 2) the assessor photographs the weighing machine '
+    'with everything on the pan: you read the total off the display and apportion it across the '
+    'ornaments, so every piece starts with a weight the assessor can correct on the pledge list, '
+    'and one CaratMeter request per loan application then returns the purity of every ornament; '
+    '3) damage is photographed with a damage percentage; 4) the pledge amount is reviewed; '
+    '5) identity documents are cross-verified against the CBS customer record; 6) the report is '
+    'generated. A fresh loan runs under a loan APPLICATION reference and has no gold loan account '
+    'number until the report recommends PROCEED, at which point the account is created; a renewal '
+    'or release verifies a loan account that already exists.'
 )
 
 
@@ -82,9 +94,8 @@ def draft(step: str, f: dict) -> str:
     """Deterministic, fact-exact assistant message for a workflow step."""
     if step == "welcome":
         if f.get("application_no"):
-            who = "new customer " if f.get("new_customer") else ""
             opened = (
-                f"Opened application <strong>{f['application_no']}</strong> for {who}<strong>{f['customer']}</strong> at "
+                f"Opened application <strong>{f['application_no']}</strong> for <strong>{f['customer']}</strong> at "
                 f"{f.get('branch') or 'this branch'} — the gold loan account is created once this verification is "
                 "recommended to proceed."
             )
@@ -95,7 +106,8 @@ def draft(step: str, f: dict) -> str:
             )
         base = (
             f"{opened} Place <strong>all pledged ornaments together</strong> on a plain "
-            "surface and upload <strong>up to 3 photos</strong>; I'll list every piece I can see so you can weigh them."
+            "surface and upload <strong>up to 3 photos</strong>; I'll list every piece I can see, ready for the "
+            "weighing machine."
         )
         if not f.get("ai_enabled", True):
             base += f"<br>AI validation is off for {f['scenario']}, so add the ornaments to the list yourself after the capture."
@@ -114,8 +126,8 @@ def draft(step: str, f: dict) -> str:
             )
         return (
             f"{flagged}I listed <strong>{f['total']} ornament{'s' if f['total'] != 1 else ''}</strong> from the photo: "
-            f"<strong>{_names(f.get('names') or [], limit=4)}</strong>. Correct anything I got wrong, then "
-            "<strong>enter each item's weight</strong> and upload the weighing-machine photo."
+            f"<strong>{_names(f.get('names') or [], limit=4)}</strong>. Correct anything I got wrong, then put "
+            "them all on the weighing machine and <strong>upload the machine photo</strong>."
         )
 
     if step == "scale":
@@ -129,6 +141,13 @@ def draft(step: str, f: dict) -> str:
                 "or upload a clearer photo."
             )
         reads = f"The machine reads <strong>{_grams(f['scale_g'])}</strong>"
+        closing = "Next, fetch the <strong>purity</strong> from the CaratMeter." if not f.get("measured") else "Purity is already recorded."
+        if f.get("apportioned"):
+            nxt = "fetch the <strong>purity</strong> from the CaratMeter" if not f.get("measured") else "continue"
+            return (
+                f"{reads}, which I've split across the <strong>{f.get('apportioned')} ornament(s)</strong> on the "
+                f"pledge list. Check each weight, correct any that look wrong, then {nxt}."
+            )
         if unweighed:
             return f"{reads}. Enter the weight of <strong>{_names(unweighed)}</strong> so I can reconcile it."
         if f.get("differs"):
@@ -136,8 +155,7 @@ def draft(step: str, f: dict) -> str:
                 f"{reads}, but the item weights add up to <strong>{_grams(f.get('entered_g'))}</strong> — a difference of "
                 f"<strong>{_grams(abs(f.get('diff_g') or 0))}</strong>. Check the individual weights, or accept the difference."
             )
-        closing = "Next, fetch the <strong>purity</strong> from the CaratMeter." if not f.get("measured") else "Purity is already recorded."
-        return f"{reads}, matching the <strong>{_grams(f.get('entered_g'))}</strong> entered across the items. {closing}"
+        return f"{reads}, matching the <strong>{_grams(f.get('entered_g'))}</strong> across the pledge list. {closing}"
 
     if step == "weight":
         pledge = f"Pledge amount <strong>{_inr(f.get('pledge_amount'))}</strong>."

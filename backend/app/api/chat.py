@@ -78,20 +78,23 @@ async def _load(session_id: Optional[str]) -> dict:
 
 # --------------------------------------------------------------------------- start / restore
 class StartBody(BaseModel):
-    account: str = Field(default="", max_length=64)
+    mobile: str = Field(default="", max_length=32)
 
 
 @router.post("/start")
 async def start(body: StartBody):
-    """Open a verification: a new application for a fresh loan, or an existing loan account."""
-    query = (body.account or "").strip()
-    if not query:
-        return ApiError(400, "Enter the customer's CIF, mobile or ID number — or an existing loan account.").response()
+    """Open a verification for the customer on this mobile number."""
+    typed = " ".join((body.mobile or "").split())
+    digits = cbs.digits_of(typed)
+    if not digits:
+        return ApiError(400, "Enter the customer's mobile number to start.").response()
+    if not 10 <= len(digits) <= 15:
+        return ApiError(400, "A mobile number is 10 digits — check the number and try again.").response()
 
-    customer = await asyncio.to_thread(cbs.find_customer, query)
+    customer = await asyncio.to_thread(cbs.find_customer_by_mobile, digits)
     if customer is None:
         samples = await asyncio.to_thread(cbs.sample_accounts)
-        return ApiError(404, f"No customer matching '{query}' was found in CBS.", samples=samples).response()
+        return ApiError(404, f"No customer in CBS has the mobile number {typed}.", samples=samples).response()
 
     settings = await asyncio.to_thread(get_settings)
     loan = customer["loan_context"]
@@ -113,59 +116,10 @@ async def start(body: StartBody):
     return {"session": S.view(state, settings), "message": message}
 
 
-class NewCustomerBody(BaseModel):
-    name: str = Field(default="", max_length=120)
-    mobile: str = Field(default="", max_length=24)
-    id_number: str = Field(default="", max_length=64)
-    address: str = Field(default="", max_length=300)
-    branch: str = Field(default="", max_length=32)
-
-
-@router.post("/application")
-async def open_application(body: NewCustomerBody):
-    """Open a gold loan application for a customer the branch is onboarding at the counter."""
-    name = " ".join(body.name.split())
-    mobile_digits = cbs.digits_of(body.mobile)
-    id_number = " ".join(body.id_number.split())
-    branch = " ".join(body.branch.split()).upper()
-    if not 2 <= len(name) <= 120:
-        return ApiError(400, "Enter the customer's name.").response()
-    if not 10 <= len(mobile_digits) <= 15:
-        return ApiError(400, "Enter a valid mobile number.").response()
-    if not 6 <= len(id_number) <= 40:
-        return ApiError(400, "Enter the customer's ID number (Aadhaar, PAN, passport…).").response()
-    if not 3 <= len(branch) <= 32:
-        return ApiError(400, "Enter the branch code, e.g. FED-MUM-001.").response()
-
-    existing = await asyncio.to_thread(cbs.find_customer, mobile_digits)
-    if existing is not None:
-        return ApiError(
-            409,
-            f"{existing['loan_context']['customer_name']} already exists in CBS on that mobile number. "
-            "Search for them instead.",
-        ).response()
-
-    settings = await asyncio.to_thread(get_settings)
-    application_no = await asyncio.to_thread(store.next_application_no, branch)
-    customer = await asyncio.to_thread(
-        cbs.create_customer,
-        name=name, mobile=body.mobile, id_number=id_number, address=body.address, branch=branch,
-        application_no=application_no,
-    )
-    loan = customer["loan_context"]
-    ai_enabled = settings.is_enabled_for(loan.get("scenario", ""))
-    state = S.new_state(customer, ai_enabled, settings.blocker_mode, settings.valuation_snapshot(), application_no)
-    await asyncio.to_thread(session_store.create, state)
-
-    message = await conversation.guidance("welcome", {
-        "customer": name,
-        "scenario": loan.get("scenario", ""),
-        "branch": branch,
-        "application_no": application_no,
-        "new_customer": True,
-        "ai_enabled": ai_enabled,
-    }, ai_enabled)
-    return {"session": S.view(state, settings), "message": message}
+@router.get("/customers")
+async def demo_customers():
+    """The CBS customers a branch can start a journey for (the demo set)."""
+    return {"customers": await asyncio.to_thread(cbs.sample_accounts, 5)}
 
 
 @router.get("/sessions")

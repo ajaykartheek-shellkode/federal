@@ -95,7 +95,7 @@ export default function ReportDocument({ session }: { session: SessionView }) {
         <div className="flex gap-6 text-center">
           {[
             [String(stats.items), "Items"],
-            [formatWeight(stats.total_weight), "Weight entered"],
+            [formatWeight(stats.total_weight), "Total weight"],
             [`${stats.measured}/${stats.items}`, "Assayed"],
             [formatINR(pledge), valuation?.totals.is_estimate ? "Pledge (est.)" : "Pledge amount"],
           ].map(([v, l]) => (
@@ -176,7 +176,7 @@ export default function ReportDocument({ session }: { session: SessionView }) {
               <th className={th} />
               <th className={th}>Ornament</th>
               <th className={th}>Purity</th>
-              <th className={th}>Weight entered</th>
+              <th className={th}>Weight</th>
               <th className={th}>Qty</th>
               <th className={th}>Listed</th>
               <th className={th}>Damage</th>
@@ -235,9 +235,9 @@ export default function ReportDocument({ session }: { session: SessionView }) {
             Reconciliation:{" "}
             <span className="font-semibold text-[#15223A]">
               {weight.scale_status === "match"
-                ? `the machine agrees with the entered weights (±${formatWeight(weight.tolerance_g)})`
+                ? `the machine agrees with the per-ornament weights (±${formatWeight(weight.tolerance_g)})`
                 : weight.scale_status === "mismatch"
-                  ? `the machine differs from the entered weights by ${formatWeight(Math.abs(weight.scale_diff_g ?? 0))} (tolerance ±${formatWeight(weight.tolerance_g)})`
+                  ? `the machine differs from the per-ornament weights by ${formatWeight(Math.abs(weight.scale_diff_g ?? 0))} (tolerance ±${formatWeight(weight.tolerance_g)})`
                   : "no weighing-machine total captured"}
               {weight.scale_overridden && " — accepted by assessor"}
             </span>
@@ -246,7 +246,7 @@ export default function ReportDocument({ session }: { session: SessionView }) {
             <thead>
               <tr>
                 <th className={th}>Ornament</th>
-                <th className={th}>Weight entered</th>
+                <th className={th}>Weight</th>
                 <th className={th}>CaratMeter assay</th>
                 <th className={th}>Δ wt</th>
                 <th className={th}>Reading</th>
@@ -281,7 +281,7 @@ export default function ReportDocument({ session }: { session: SessionView }) {
           </table>
           <div className="report-avoid-break mt-2.5 flex items-end justify-between gap-6">
             <p className="max-w-[95mm] text-[10px] leading-snug text-[#58647A]">
-              Valued on the weight entered for each ornament at the rate for the purity the CaratMeter assayed × LTV, less the damage deduction ({DAMAGE_DEDUCTION_META[valuation.damage_deduction_mode].hint}).{valuation.totals.is_estimate ? " Some ornaments are not assayed yet, so the total is provisional." : ""} Rates as configured when the verification started. Indicative — not a sanction.
+              Valued on each ornament&apos;s weight at the rate for the purity the CaratMeter assayed × LTV, less the damage deduction ({DAMAGE_DEDUCTION_META[valuation.damage_deduction_mode].hint}).{valuation.totals.is_estimate ? " Some ornaments are not assayed yet, so the total is provisional." : ""} Rates as configured when the verification started. Indicative — not a sanction.
             </p>
             <div className="min-w-[64mm] text-[11.5px]">
               {[
