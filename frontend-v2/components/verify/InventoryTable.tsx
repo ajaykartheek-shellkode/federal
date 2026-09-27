@@ -16,7 +16,7 @@ import type { DamageEntry, InventoryItem, ItemStatus, SessionView, ValuedItem } 
 /**
  * The one collateral table of the verification. The collateral photo puts the ornaments on it;
  * the assessor weighs each one here; and it gains the columns of every step as it completes —
- * the CaratMeter assay, then damage, then the pledge amount. Damage records open as a detail row
+ * the Karatometer assay, then damage. Damage records open as a detail row
  * under their item, so no step adds a second table.
  */
 const FLAGGED = ["weight_mismatch", "ungraded", "mismatch", "missing"];
@@ -134,21 +134,21 @@ function DamageChip({ damage }: { damage?: DamageEntry }) {
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
       <ResultBadge status={damage.status} overridden={damage.overridden} />
-      {damage.damage_percent > 0 && <span className="text-2xs tabular-nums text-ink-muted">−{damage.damage_percent}%</span>}
+      {!damage.asset_id && <span className="text-2xs text-ink-muted">no photo</span>}
     </span>
   );
 }
 
 /**
  * One ornament on a phone. A seven-column table can't shrink, so the same facts are stacked:
- * who it is, what it weighs, what the CaratMeter said, and what it is worth.
+ * who it is, what it weighs, what the Karatometer said, and what it is worth.
  */
 function ItemCard({
   ctx,
   show,
 }: {
   ctx: RowContext;
-  show: { reading: boolean; damage: boolean; pledge: boolean };
+  show: { reading: boolean; damage: boolean };
 }) {
   const { openDialog } = useVerification();
   const { item, valued, damage, session } = ctx;
@@ -186,21 +186,15 @@ function ItemCard({
             )}
           </p>
         </div>
-        {show.pledge && (
-          <div className="shrink-0 text-right">
-            <p className={cn("text-sm font-bold tabular-nums", valued?.unpriced ? "text-ink-faint" : "text-brand-700")}>
-              {formatINR(valued?.pledge_amount ?? 0)}
-            </p>
-            <p className="text-2xs text-ink-faint">
-              {valued?.unpriced ? "not assayed" : `at ${formatINR(valued?.rate_per_gram ?? 0)}/g`}
-            </p>
-          </div>
-        )}
+        <div className="shrink-0 text-right">
+          <p className="text-sm font-bold tabular-nums text-ink">{formatWeight(valued?.net_weight_g ?? 0)}</p>
+          <p className="text-2xs text-ink-faint">net weight</p>
+        </div>
       </div>
 
       <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2 pl-[60px]">
         <span className="inline-flex items-center gap-1.5 text-sm">
-          <span className="text-2xs uppercase tracking-wide text-ink-faint">Weight</span>
+          <span className="text-2xs uppercase tracking-wide text-ink-faint">Gross</span>
           <WeightCell item={item} locked={locked} />
         </span>
         {show.reading &&
@@ -219,10 +213,6 @@ function ItemCard({
           ))}
         {show.damage && damage && <DamageChip damage={damage} />}
       </div>
-
-      {item.weight_source === "ai" && item.weight_basis && (
-        <p className="mt-1.5 pl-[60px] text-xs italic text-ink-muted">“{item.weight_basis}”</p>
-      )}
 
       <div className="mt-2.5 flex items-center gap-1 pl-[60px]">
         {show.reading && flagged && !locked && (
@@ -416,33 +406,30 @@ export default function InventoryTable({ session }: { session: SessionView }) {
     },
     {
       key: "weight",
-      header: "Weight",
+      header: "Gross weight",
       footer: <span className="font-semibold tabular-nums text-ink">{formatWeight(stats.total_weight)}</span>,
       cell: ({ item }) => <WeightCell item={item} locked={locked} />,
     },
-  ];
-
-  if (session.inventory.some((r) => r.weight_source === "ai" && r.weight_basis)) {
-    columns.push({
-      key: "basis",
-      header: "Why this weight",
-      cell: ({ item }) =>
-        item.weight_source === "ai" && item.weight_basis ? (
-          <span className="text-xs text-ink-muted">{item.weight_basis}</span>
-        ) : item.weight_gm > 0 ? (
-          <span className="text-xs text-ink-faint">Weighed by the assessor</span>
+    {
+      // The net weight the loan is sized on: this ornament's gross weight less its share of wastage.
+      key: "net",
+      header: "Net weight",
+      footer: <span className="font-semibold tabular-nums text-ink">{formatWeight(totals.net_weight_g)}</span>,
+      cell: ({ valued }) =>
+        valued && valued.gross_weight_g > 0 ? (
+          <span className="font-semibold tabular-nums text-ink">{formatWeight(valued.net_weight_g)}</span>
         ) : (
           <span className="text-ink-faint">—</span>
         ),
-    });
-  }
+    },
+  ];
 
   if (showReading) {
     columns.push(
       {
         // Purity comes from the assay; the weights are reconciled on the Weight & purity card.
         key: "reading",
-        header: "CaratMeter purity",
+        header: "Purity",
         cell: ({ item }) => {
           const m = item.measurement;
           if (!m) return <span className="text-ink-faint">Not assayed</span>;
@@ -481,25 +468,6 @@ export default function InventoryTable({ session }: { session: SessionView }) {
     });
   }
 
-  if (showPledge) {
-    columns.push({
-      key: "pledge",
-      header: "Pledge",
-      align: "right",
-      footer: <span className="font-bold tabular-nums text-brand-700">{formatINR(totals.pledge_amount)}</span>,
-      cell: ({ valued }) => (
-        <span className="whitespace-nowrap">
-          <span className={cn("font-semibold tabular-nums", valued?.unpriced ? "text-ink-faint" : "text-ink")}>
-            {formatINR(valued?.pledge_amount ?? 0)}
-          </span>
-          <span className={cn("block text-2xs", valued?.measured ? "text-ok" : "text-ink-faint")}>
-            {valued?.unpriced ? "not assayed yet" : `at ${formatINR(valued?.rate_per_gram ?? 0)}/g`}
-          </span>
-        </span>
-      ),
-    });
-  }
-
   columns.push({
     key: "actions",
     header: "Actions",
@@ -524,7 +492,7 @@ export default function InventoryTable({ session }: { session: SessionView }) {
   const subtitle = [
     `${plural(stats.items, "ornament")} from the photo · ${stats.weighed}/${stats.items} weighed · ${formatWeight(stats.total_weight)}`,
     showReading ? `${stats.measured}/${stats.items} assayed` : null,
-    showPledge ? `pledge ${formatINR(totals.pledge_amount)}` : null,
+    showPledge ? `net ${formatWeight(totals.net_weight_g)}` : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -567,7 +535,7 @@ export default function InventoryTable({ session }: { session: SessionView }) {
             <ItemCard
               key={item.id}
               ctx={{ item, valued: valuedById.get(item.id), damage: byItem.get(item.id), session }}
-              show={{ reading: showReading, damage: showDamage, pledge: showPledge }}
+              show={{ reading: showReading, damage: showDamage }}
             />
           ))}
         </AnimatePresence>
@@ -576,7 +544,7 @@ export default function InventoryTable({ session }: { session: SessionView }) {
             <span className="text-sm font-bold text-ink">
               Total <span className="ml-2 font-normal tabular-nums text-ink-muted">{formatWeight(stats.total_weight)}</span>
             </span>
-            <span className="text-base font-bold tabular-nums text-brand-700">{formatINR(totals.pledge_amount)}</span>
+            <span className="text-base font-bold tabular-nums text-brand-700">{formatWeight(totals.net_weight_g)} net</span>
           </li>
         )}
       </ul>

@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useVerification } from "@/components/providers/VerificationProvider";
-import { Badge, ResultBadge } from "@/components/ui/Badge";
+import { Badge } from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import { Card, CardHeader, EmptyState } from "@/components/ui/Card";
 import Icon from "@/components/ui/Icon";
@@ -13,8 +13,9 @@ import { ease } from "@/lib/motion";
 import type { CaptureCheck, CollateralImage, SessionView } from "@/lib/types";
 
 function PhotoCard({ image, session }: { image: CollateralImage; session: SessionView }) {
-  const { openDialog } = useVerification();
+  const { openDialog, state } = useVerification();
   const checked = image.status !== "not_checked";
+  const locked = session.workflow_state === "done";
   const ring = { pass: "ring-ok-line", alert: "ring-warn-line", fail: "ring-bad-line", not_checked: "ring-line" }[image.status];
   const matchedNames = image.matched.map((id) => session.inventory.find((i) => i.id === id)?.name).filter(Boolean);
   const listed = image.matched.length;
@@ -46,9 +47,6 @@ function PhotoCard({ image, session }: { image: CollateralImage; session: Sessio
             }
           />
         </div>
-        <span className="absolute left-2 top-2">
-          <ResultBadge status={image.status} className="shadow-xs" />
-        </span>
         {listed > 0 && (
           <motion.span
             initial={{ opacity: 0, y: 6 }}
@@ -63,8 +61,22 @@ function PhotoCard({ image, session }: { image: CollateralImage; session: Sessio
       <div className="min-w-0 flex-1 p-3.5">
         <div className="flex items-center justify-between gap-2">
           <p className="text-sm font-semibold text-ink">Photo {image.index + 1}</p>
-          <span className="text-2xs text-ink-faint">
-            Upload {image.upload_no} · {formatTime(image.uploaded_at)}
+          <span className="flex items-center gap-1.5">
+            <span className="text-2xs text-ink-faint">
+              Upload {image.upload_no} · {formatTime(image.uploaded_at)}
+            </span>
+            {!locked && (
+              <button
+                type="button"
+                disabled={!!state.busy}
+                onClick={() => openDialog({ kind: "remove-photo", index: image.index })}
+                title={`Remove photo ${image.index + 1}`}
+                aria-label={`Remove photo ${image.index + 1}`}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-ink-faint transition-colors hover:bg-bad-soft hover:text-bad disabled:opacity-40"
+              >
+                <Icon name="trash" size={14} />
+              </button>
+            )}
           </span>
         </div>
         {checked ? (

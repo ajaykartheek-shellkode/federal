@@ -56,7 +56,7 @@ export default function ActionBar() {
       } else if (!measured) {
         primary = (
           <Button variant="gold" icon="cpu" disabled={busy || !weighed} onClick={() => runStep("measure")}>
-            Fetch purity from CaratMeter
+            Fetch purity from Karatometer
           </Button>
         );
         secondary = (
@@ -90,7 +90,7 @@ export default function ActionBar() {
         <Button variant="secondary" icon={blocked ? "lock" : undefined} iconRight={blocked ? undefined : "arrowRight"} disabled={busy || blocked} onClick={() => runStep("continue")}>
           {session.damages.length
             ? session.steps.includes("valuation")
-              ? "Continue to pledge valuation"
+              ? "Continue to loan valuation"
               : "Continue to documents"
             : "No damage · continue"}
         </Button>

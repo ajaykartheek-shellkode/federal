@@ -13,10 +13,10 @@ import { ApiError } from "@/lib/api";
 import { fadeUp, stagger } from "@/lib/motion";
 
 const HIGHLIGHTS: { icon: IconName; title: string; text: string }[] = [
-  { icon: "camera", title: "The photo builds the pledge list", text: "Every ornament on the tray becomes a line you can name, weigh and correct" },
-  { icon: "weighScale", title: "One machine photo, every weight", text: "The agent reads the display and apportions the total across the ornaments" },
-  { icon: "cpu", title: "CaratMeter purity per piece", text: "One assay request per application — purity is never taken on trust" },
-  { icon: "lock", title: "Audited end to end", text: "Every override carries a justification, and the report is signed at the counter" },
+  { icon: "camera", title: "The photo builds the list", text: "Every ornament on the tray becomes a line you can name, weigh and correct" },
+  { icon: "weighScale", title: "Gross, wastage, net", text: "The machine photo gives the gross weight; the net weight sets the maximum loan" },
+  { icon: "cpu", title: "Karatometer purity per piece", text: "One assay request per application — purity is never taken on trust" },
+  { icon: "lock", title: "Audited end to end", text: "Every override carries a justification, and the customer signs at the counter" },
 ];
 
 export default function SignInForm() {
@@ -62,14 +62,14 @@ export default function SignInForm() {
 
         <motion.div variants={stagger(0.08)} initial="hidden" animate="show" className="relative max-w-xl">
           <motion.p variants={fadeUp} className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-gold-300">
-            <Icon name="sparkles" size={14} /> GL Portal · AI-guided verification
+            <Icon name="sparkles" size={14} /> GL Portal · Gold Loan Originating System
           </motion.p>
           <motion.h1 variants={fadeUp} className="mt-4 text-[38px] font-bold leading-[1.1] text-white">
-            Gold loan collateral, verified at the counter.
+            Originate a gold loan, start to sanction.
           </motion.h1>
           <motion.p variants={fadeUp} className="mt-3 max-w-md text-[15px] leading-relaxed text-white/75">
-            Find the customer by mobile number and the Verification Agent takes it from there — photo
-            to pledge list, machine total to per-ornament weights, assay to sanctioned account.
+            Find the customer by mobile number and the agent takes it from there — photo to ornament
+            list, gross weight to net, assay to maximum loan amount, through to the sanctioned account.
           </motion.p>
 
           <motion.ul variants={stagger(0.07, 0.15)} className="mt-9 grid gap-3 sm:grid-cols-2">
@@ -104,7 +104,7 @@ export default function SignInForm() {
             <Icon name="sparkles" size={12} /> GL Portal
           </p>
           <h1 className="relative mt-1.5 text-2xl font-bold leading-tight text-white">
-            Gold loan collateral, verified at the counter.
+            Originate a gold loan, start to sanction.
           </h1>
         </div>
 

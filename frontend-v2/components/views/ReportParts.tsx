@@ -247,7 +247,7 @@ export function RunCard({ run, defaultOpen = false }: { run: RunRecord; defaultO
           <p className="truncate text-xs text-ink-muted">
             {formatDateTime(run.created_at)} · {run.loan.scenario}
             {stats && ` · ${plural(stats.items, "item")} · ${stats.damaged} damaged`}
-            {typeof run.summary.pledge_amount === "number" && ` · Pledge ${formatINR(run.summary.pledge_amount)}`}
+            {typeof run.summary.pledge_amount === "number" && ` · Max loan ${formatINR(run.summary.pledge_amount)}`}
             {run.summary.report_id && <span className="font-mono"> · {run.summary.report_id}</span>}
           </p>
         </div>

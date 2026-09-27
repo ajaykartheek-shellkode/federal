@@ -4,7 +4,7 @@
 so KYC values are already masked) and returns PDF bytes:
 
     letterhead · recommendation + KPIs · review points · customer & loan · collateral verification
-    · weight, purity & pledge valuation · damage assessment · document verification · audit trail
+    · weight, purity & loan valuation · damage assessment · document verification · audit trail
     · declaration with signature blocks, and a page footer on every page.
 
 Layout constants live at the top so the document stays consistent with the web report's
@@ -83,11 +83,6 @@ MEASURE_TONE = {
     "mismatch": ("Weight & purity", "warn"),
     "missing": ("No reading", "bad"),
     "pending": ("Not measured", "neutral"),
-}
-DAMAGE_RULE = {
-    "tenths": "damage 10 → 1% deduction",
-    "percent": "damage 10 → 10% deduction",
-    "none": "no damage deduction",
 }
 
 
@@ -269,7 +264,7 @@ def _verdict(view: dict) -> Table:
         (str(stats["items"]), "Ornaments"),
         (grams(stats.get("total_weight")), "Total weight"),
         (f"{stats.get('measured', 0)}/{stats['items']}", "Assayed"),
-        (inr(totals.get("pledge_amount", stats.get("pledge_amount", 0))), "Pledge (provisional)" if totals.get("is_estimate") else "Pledge amount"),
+        (inr(totals.get("max_loan_amount", totals.get("pledge_amount", 0))), "Max loan amount"),
     ]
     kpi_table = Table(
         [[Paragraph(v, S_KPI) for v, _ in kpis], [Paragraph(l, S_KPI_LABEL) for _, l in kpis]],
@@ -320,7 +315,7 @@ def _customer(view: dict) -> Table:
     loan, stats = view["loan"], view["report"]["stats"]
     valuation = view["report"].get("valuation") or view.get("valuation") or {}
     totals = valuation.get("totals") or {}
-    pledge = inr(totals.get("pledge_amount", stats.get("pledge_amount", 0))) + (" (estimate)" if totals.get("is_estimate") else "")
+    max_loan = inr(totals.get("max_loan_amount", totals.get("pledge_amount", 0)))
     application = loan.get("application_no", "")
     pairs = [
         ("Customer", loan.get("customer_name", "")),
@@ -331,7 +326,7 @@ def _customer(view: dict) -> Table:
         # A sanctioned application shows the account it opened; otherwise the ID proof sits here.
         ("Gold loan a/c", loan.get("account_number") or "Opened on approval") if application
         else ("ID proof", loan.get("id_number_masked", "") or "-"),
-        ("Pledge amount", pledge),
+        ("Max loan amount", max_loan),
         ("AI validation", "Enabled" if view.get("ai_enabled", True) else "Disabled (manual)"),
         ("Enforcement", "Blocker" if view["settings"]["blocker_mode"] else "Alert"),
         ("Generated", _date(view["report"]["generated_at"])),
@@ -380,9 +375,11 @@ def _collateral(view: dict) -> List:
         ]))
         flow += [strip, Spacer(1, 3 * mm)]
 
-    header = [Paragraph(h, S_TH) for h in ("", "Ornament", "Purity", "Weight", "Qty", "Listed", "Damage")]
+    valued_by_id = {v["ornament_id"]: v for v in view["valuation"]["items"]}
+    header = [Paragraph(h, S_TH) for h in ("", "Ornament", "Purity", "Gross weight", "Net weight", "Qty", "Listed", "Damage")]
     rows = [header]
     for it in view["inventory"]:
+        valued = valued_by_id.get(it["id"])
         damage = next((d for d in view["damages"] if d["ornament_id"] == it["id"]), None)
         if damage:
             label, tone = ("Overridden", "brand") if damage.get("overridden") else RESULT_TONE.get(damage["status"], RESULT_TONE["not_checked"])
@@ -397,11 +394,12 @@ def _collateral(view: dict) -> List:
             Paragraph(it["name"], S_TD_STRONG),
             Paragraph(purity_label(it), S_TD),
             Paragraph(grams(it["weight_gm"]), S_TD),
+            Paragraph(grams(valued["net_weight_g"]) if valued else "-", S_TD),
             Paragraph(str(it["quantity"]), S_TD),
             _pill(*ITEM_TONE.get(it.get("origin", "detected"), ITEM_TONE["detected"]), width=24 * mm),
             chip,
         ])
-    widths = [10 * mm, CONTENT_W - 118 * mm, 20 * mm, 22 * mm, 12 * mm, 28 * mm, 26 * mm]
+    widths = [10 * mm, CONTENT_W - 140 * mm, 20 * mm, 22 * mm, 22 * mm, 12 * mm, 28 * mm, 26 * mm]
     flow.append(_table(rows, widths))
     return flow
 
@@ -433,11 +431,12 @@ def _weight_section(view: dict) -> List:
         else "Entered by the assessor" if source == "assessor" else "Not captured"
     )
     tiles = Table([[
-        tile("Per ornament", grams(weight["entered_g"]), f"{report['stats']['items']} ornaments"),
-        tile("Weighing machine", grams(weight["scale_g"]) if weight.get("scale_g") is not None else "-", scale_caption),
-        tile("CaratMeter total", grams(weight["measured_g"]) if weight.get("measured_g") is not None else "-",
-             f"{device.get('model') or 'CaratMeter'} · {device.get('device_id') or '-'}"),
-    ]], colWidths=[CONTENT_W / 3] * 3, hAlign="LEFT")
+        tile("Gross weight", grams(weight["gross_g"]), scale_caption),
+        tile("Wastage", grams(weight["wastage_g"]), f"{weight['wastage_pct']:g}% of the gross weight"),
+        tile("Net weight", grams(weight["net_g"]), "Gross weight less wastage"),
+        tile("Karatometer", grams(weight["measured_g"]) if weight.get("measured_g") is not None else "-",
+             f"{device.get('model') or 'Karatometer'} · {device.get('device_id') or '-'}"),
+    ]], colWidths=[CONTENT_W / 4] * 4, hAlign="LEFT")
     tiles.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 3 * mm),
@@ -454,7 +453,7 @@ def _weight_section(view: dict) -> List:
     if weight.get("scale_overridden"):
         recon += " — accepted by the assessor"
 
-    header = [Paragraph(h, S_TH) for h in ("Ornament", "Weight", "CaratMeter assay", "Diff wt", "Reading", "Rate/g", "LTV", "Pledge")]
+    header = [Paragraph(h, S_TH) for h in ("Ornament", "Gross weight", "Net weight", "Purity", "Diff wt", "Reading")]
     rows = [header]
     for it in view["inventory"]:
         valued = next((v for v in valuation["items"] if v["ornament_id"] == it["id"]), None)
@@ -464,23 +463,22 @@ def _weight_section(view: dict) -> List:
         chip = _pill(label, tone, width=23 * mm)
         rows.append([
             Paragraph(it["name"], S_TD_STRONG),
-            Paragraph(grams(it["weight_gm"]), S_TD),
-            Paragraph(f"{m['grade'] or 'Ungraded'} ({m['fineness_pct']:.2f}%) · {grams(m['weight_g'])}" if m else "-", S_TD),
+            Paragraph(grams(valued["gross_weight_g"]) if valued else grams(it["weight_gm"]), S_TD),
+            Paragraph(grams(valued["net_weight_g"]) if valued else "-", S_TD),
+            Paragraph(f"{m['grade'] or 'Ungraded'} ({m['fineness_pct']:.2f}%)" if m else "-", S_TD),
             Paragraph(_delta(m["weight_g"] - it["weight_gm"]) if m else "-", S_TD),
             chip,
-            Paragraph(inr(valued["rate_per_gram"]) if valued else "-", S_TD_RIGHT),
-            Paragraph(f"{valued['ltv_pct']:g}%" if valued else "-", S_TD_RIGHT),
-            Paragraph(inr(valued["pledge_amount"]) if valued else "-", S_TD_RIGHT_STRONG),
         ])
-    widths = [CONTENT_W - 149 * mm, 24 * mm, 38 * mm, 14 * mm, 25 * mm, 17 * mm, 10 * mm, 21 * mm]
+    widths = [CONTENT_W - 118 * mm, 26 * mm, 24 * mm, 29 * mm, 14 * mm, 25 * mm]
 
-    margin = max(0, totals["gross_value"] - totals["pledge_amount"] - totals["damage_deduction"])
     money = Table([
-        [Paragraph("Gross value", S_MUTED), Paragraph(inr(totals["gross_value"]), S_TD_RIGHT)],
-        [Paragraph("Less LTV margin", S_MUTED), Paragraph("-" + inr(margin), S_TD_RIGHT)],
-        [Paragraph("Less damage deduction", S_MUTED), Paragraph("-" + inr(totals["damage_deduction"]), S_TD_RIGHT)],
-        [Paragraph("Pledge amount", _style("pl", 9.5, 12, BRAND, bold=True)),
-         Paragraph(inr(totals["pledge_amount"]), _style("pv", 9.5, 12, BRAND, bold=True, alignment=TA_RIGHT))],
+        [Paragraph("Gross weight", S_MUTED), Paragraph(grams(totals["gross_weight_g"]), S_TD_RIGHT)],
+        [Paragraph(f"Less wastage ({totals['wastage_pct']:g}%)", S_MUTED),
+         Paragraph("-" + grams(totals["wastage_g"]), S_TD_RIGHT)],
+        [Paragraph("Net weight", S_MUTED), Paragraph(grams(totals["net_weight_g"]), S_TD_RIGHT)],
+        [Paragraph("Rate per gram", S_MUTED), Paragraph(inr(totals["rate_per_gram"]), S_TD_RIGHT)],
+        [Paragraph("Max loan amount", _style("pl", 9.5, 12, BRAND, bold=True)),
+         Paragraph(inr(totals["max_loan_amount"]), _style("pv", 9.5, 12, BRAND, bold=True, alignment=TA_RIGHT))],
     ], colWidths=[36 * mm, 28 * mm], hAlign="RIGHT")
     money.setStyle(TableStyle([
         ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
@@ -488,10 +486,10 @@ def _weight_section(view: dict) -> List:
         ("LINEABOVE", (0, -1), (-1, -1), 0.6, LINE),
     ]))
     note = Paragraph(
-        "Valued on each ornament's weight at the rate for the purity the CaratMeter assayed × the "
-        f"material LTV, less the damage deduction ({DAMAGE_RULE.get(valuation.get('damage_deduction_mode'), 'per settings')}). "
-        + ("Some ornaments are not assayed yet, so the total is provisional. " if totals["is_estimate"] else "")
-        + "Rates as configured when the verification started. Indicative — not a sanction.",
+        f"The maximum loan is the net weight — gross weight less {totals['wastage_pct']:g}% wastage — at "
+        f"{inr(totals['rate_per_gram'])} per gram, as configured when this verification started. "
+        + ("Some ornaments are not assayed yet, so the purity column is provisional. " if totals["is_estimate"] else "")
+        + "Indicative — not a sanction.",
         _style("note", 7, 9.5, INK_MUTED),
     )
     footer = Table([[note, money]], colWidths=[CONTENT_W - 72 * mm, 72 * mm], hAlign="LEFT")
@@ -579,36 +577,58 @@ def _audit(view: dict) -> List:
 
 def _declaration(view: dict) -> List:
     loan = view["loan"]
+    report = view.get("report") or {}
+    signed = {s["role"]: s for s in (report.get("signatures") or view.get("signatures") or [])}
+    col = CONTENT_W / 3 - 3 * mm
 
-    def pad(role: str, detail: str) -> Table:
-        box = Table([[Paragraph("", S_TD)]], colWidths=[CONTENT_W / 2 - 4 * mm], rowHeights=[18 * mm])
-        box.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 0.6, LINE), ("BACKGROUND", (0, 0), (-1, -1), SUBTLE)]))
-        wrap = Table([[Paragraph(role.upper(), _style("sr", 6.8, 9, INK_MUTED, bold=True))], [box],
-                      [Paragraph(detail, S_MUTED)]], colWidths=[CONTENT_W / 2 - 4 * mm])
+    def pad(role: str, key: str, detail: str) -> Table:
+        entry = signed.get(key)
+        if entry:
+            # A captured signature prints as the name on the line, with when it was given.
+            inner = Table([[Paragraph(entry.get("name") or role, _style(f"sg{key}", 12, 15, INK, bold=True))]],
+                          colWidths=[col], rowHeights=[14 * mm])
+            inner.setStyle(TableStyle([
+                ("BOX", (0, 0), (-1, -1), 0.6, LINE), ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+                ("VALIGN", (0, 0), (-1, -1), "BOTTOM"), ("LEFTPADDING", (0, 0), (-1, -1), 2 * mm),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2 * mm),
+            ]))
+            caption = f"{detail} · e-signed {_date(entry.get('signed_at'))}"
+        else:
+            inner = Table([[Paragraph("", S_TD)]], colWidths=[col], rowHeights=[14 * mm])
+            inner.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 0.6, LINE), ("BACKGROUND", (0, 0), (-1, -1), SUBTLE)]))
+            caption = detail
+        wrap = Table([[Paragraph(role.upper(), _style("sr", 6.8, 9, INK_MUTED, bold=True))], [inner],
+                      [Paragraph(caption, S_MUTED)]], colWidths=[col])
         wrap.setStyle(TableStyle([
             ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
             ("TOPPADDING", (0, 0), (-1, -1), 1 * mm), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
         ]))
         return wrap
 
-    pads = Table([[pad("Branch assessor", f"Branch {loan.get('branch') or '-'}"),
-                   pad("Authorising officer", f"Account {loan.get('account_number', '')}")]],
-                 colWidths=[CONTENT_W / 2, CONTENT_W / 2], hAlign="LEFT")
+    reference = loan.get("account_number") or loan.get("application_no") or "-"
+    pads = Table([[
+        pad("Customer", "customer", loan.get("customer_name", "")),
+        pad("Branch assessor", "assessor", f"Branch {loan.get('branch') or '-'}"),
+        pad("Authorising officer", "officer", reference),
+    ]], colWidths=[CONTENT_W / 3] * 3, hAlign="LEFT")
     pads.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (0, 0), 0), ("RIGHTPADDING", (0, 0), (0, 0), 4 * mm),
-        ("LEFTPADDING", (1, 0), (1, 0), 4 * mm), ("RIGHTPADDING", (1, 0), (1, 0), 0),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 4.5 * mm),
         ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
-    return [
+    flow = [
         Paragraph(
-            "I confirm that the collateral and documents recorded above were verified in my presence. AI validation is "
-            "advisory; the final assessment and this authorisation are made by the branch officials named below.",
+            "The customer confirms that the ornaments listed above are pledged by them and that the weights and purity "
+            "recorded are as assessed in their presence. AI validation is advisory; the final assessment and this "
+            "authorisation are made by the branch officials named below.",
             S_BODY,
         ),
         Spacer(1, 3 * mm),
         pads,
     ]
+    if report.get("submitted_at"):
+        flow += [Spacer(1, 3 * mm), _pill(f"Submitted {_date(report['submitted_at'])}", "ok", width=60 * mm)]
+    return flow
 
 
 # --------------------------------------------------------------------------- document
@@ -654,7 +674,7 @@ def build_report_pdf(view: dict) -> bytes:
     flow += section("Collateral verification", _collateral(view))
     weight_flow = _weight_section(view)
     if weight_flow:
-        flow += section("Weight, purity & pledge valuation", weight_flow)
+        flow += section("Weight, purity & loan valuation", weight_flow)
     if view["damages"]:
         flow += section("Damage assessment", _damages(view))
     flow += section("Document verification", _documents(view))

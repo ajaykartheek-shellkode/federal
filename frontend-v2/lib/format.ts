@@ -1,6 +1,6 @@
 // Formatting + status vocabulary shared across the UI.
 
-import type { DamageDeduction, InventoryItem, ItemStatus, MeasurementStatus, ResultStatus, WorkflowState } from "./types";
+import type { InventoryItem, ItemStatus, MeasurementStatus, ResultStatus, WorkflowState } from "./types";
 
 const inr = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
 const num = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
@@ -58,25 +58,19 @@ export const ITEM_META: Record<ItemStatus, { label: string; tone: Tone; hint: st
 };
 
 export const MEASURE_META: Record<MeasurementStatus, { label: string; tone: Tone; hint: string }> = {
-  pending: { label: "Not assayed", tone: "neutral", hint: "Fetch the readings from the CaratMeter" },
+  pending: { label: "Not assayed", tone: "neutral", hint: "Fetch the readings from the Karatometer" },
   match: { label: "Assayed", tone: "ok", hint: "Purity graded, and the device weight agrees with the weight on the pledge list" },
   weight_mismatch: { label: "Weight differs", tone: "warn", hint: "The device weight is outside tolerance of the weight on the pledge list" },
   ungraded: { label: "Below grades", tone: "warn", hint: "The assayed purity is below every grade configured for this material" },
   mismatch: { label: "Weight & purity", tone: "warn", hint: "The device weight differs and the purity is below every grade" },
-  missing: { label: "No reading", tone: "bad", hint: "The CaratMeter returned no usable reading for this ornament" },
-};
-
-export const DAMAGE_DEDUCTION_META: Record<DamageDeduction, { label: string; hint: string }> = {
-  tenths: { label: "Tenths of a percent", hint: "damage 10 → 1% deduction" },
-  percent: { label: "Direct percentage", hint: "damage 10 → 10% deduction" },
-  none: { label: "No deduction", hint: "damage is recorded but not deducted" },
+  missing: { label: "No reading", tone: "bad", hint: "The Karatometer returned no usable reading for this ornament" },
 };
 
 export const WORKFLOW_STEPS: { key: WorkflowState; label: string; short: string }[] = [
   { key: "collateral", label: "Collateral photos", short: "Collateral" },
   { key: "weight", label: "Weight & purity", short: "Weight" },
   { key: "damage", label: "Damage assessment", short: "Damage" },
-  { key: "valuation", label: "Pledge valuation", short: "Pledge" },
+  { key: "valuation", label: "Loan valuation", short: "Loan" },
   { key: "document", label: "Document verification", short: "Documents" },
   { key: "report", label: "Report", short: "Report" },
 ];
@@ -84,7 +78,7 @@ export const WORKFLOW_STEPS: { key: WorkflowState; label: string; short: string 
 export const AGENT_LABEL: Record<string, string> = {
   collateral: "Collateral Validator",
   scale: "Weighing Machine",
-  weight: "CaratMeter · Purity",
+  weight: "Karatometer · Purity",
   damage: "Damage Detector",
   document: "Document Verifier",
   report: "Report Generator",

@@ -1,16 +1,15 @@
-"""Pledge valuation — pure functions, driven entirely by the configured valuation table.
+"""Loan valuation — pure functions.
 
-For each ornament:
-    weight         = the weight the assessor entered for that item (cross-checked against the
-                     weighing machine and the CaratMeter)
-    purity grade   = the grade assessed from the CaratMeter fineness; unpriced until measured
-    gross value    = weight × rate per gram of that material + grade
-    eligible       = gross value × LTV % of the material
-    damage         = eligible × damage % deduction (mode: "tenths" | "percent" | "none")
-    pledge amount  = eligible − damage
+The loan amount follows the branch's weight chain, not a per-purity price list:
 
-Nothing here is hard-coded per material: materials, grades, rates and LTV all come from
-Settings (captured into the session when it starts).
+    gross weight   = what the ornaments weigh (the weighing-machine total, apportioned per piece)
+    wastage        = a fixed percentage of the gross weight (solder, stones, impurities)
+    net weight     = gross − wastage
+    max loan       = net weight × the rate per gram
+
+The rate and the wastage percentage come from Settings and are captured into the session when it
+starts, so a later change never moves a verification already in progress. Purity still comes from
+the Karatometer and is shown per ornament, but it does not price the loan.
 """
 
 from __future__ import annotations
@@ -42,7 +41,7 @@ def declared_grade(material: Optional[dict], carat: str) -> Optional[dict]:
 
 
 def fineness_for_declared(material_key: str, carat: str) -> float:
-    """Nominal fineness % implied by a declared purity (used by the CaratMeter simulator)."""
+    """Nominal fineness % implied by a declared purity (used by the Karatometer simulator)."""
     try:
         value = float(norm_grade(carat))
     except ValueError:
@@ -62,63 +61,72 @@ def grade_for_fineness(material: Optional[dict], fineness_pct: float, tolerance_
     return None
 
 
-def damage_retained(damage_percent: float, mode: str) -> float:
-    """Fraction of value retained after the CBS damage deduction."""
-    pct = max(0.0, float(damage_percent or 0))
-    if mode == "percent":
-        return max(0.0, 1 - pct / 100)
-    if mode == "tenths":
-        return max(0.0, 1 - pct / 1000)  # client sketch: damage 10 → 1 % reduction
-    return 1.0
+def wastage_pct_of(valuation: dict) -> float:
+    try:
+        return max(0.0, min(100.0, float(valuation.get("wastage_pct", 3.0))))
+    except (TypeError, ValueError):
+        return 3.0
+
+
+def rate_per_gram_of(valuation: dict) -> float:
+    try:
+        return max(0.0, float(valuation.get("rate_per_gram", 8500)))
+    except (TypeError, ValueError):
+        return 8500.0
+
+
+def net_of(gross_g: float, wastage_pct: float) -> float:
+    return round(max(0.0, float(gross_g)) * (1 - wastage_pct / 100), 3)
 
 
 def value_item(item: dict, valuation: dict) -> dict:
-    """Value one ornament: entered weight at the rate for its assessed purity."""
+    """One ornament's share of the chain: gross weight, its wastage, and the net weight left."""
     material = material_config(valuation, item.get("material", "gold"))
     measured = item.get("measurement")
-    weight = float(item.get("weight_gm") or 0)
-    # Purity comes from the CaratMeter; a correction by the assessor is honoured when it is graded.
+    gross = round(float(item.get("weight_gm") or 0), 3)
+    # Purity is the Karatometer's; a correction by the assessor is honoured when it is graded.
     grade = grade_by_name(material, measured.get("grade")) if measured else None
     if grade is None:
         grade = declared_grade(material, item.get("carat", ""))
 
-    rate = float(grade["rate_per_gram"]) if grade else 0.0
-    ltv = float(material["ltv_pct"]) if material else 0.0
-    gross = weight * rate
-    eligible_before = gross * ltv / 100
-    retained = damage_retained(item.get("damage_percent", 0), valuation.get("damage_deduction", "tenths"))
-    pledge = eligible_before * retained
+    wastage_pct = wastage_pct_of(valuation)
+    net = net_of(gross, wastage_pct)
+    rate = rate_per_gram_of(valuation)
     return {
         "ornament_id": item["id"],
         "name": item["name"],
         "material": (material or {}).get("name", item.get("material", "")),
         "grade": grade["grade"] if grade else None,
-        "weight_g": round(weight, 3),
-        "weight_basis": "entered",
+        "gross_weight_g": gross,
+        "wastage_g": round(gross - net, 3),
+        "net_weight_g": net,
         "measured": bool(measured),
         "rate_per_gram": rate,
-        "gross_value": round(gross),
-        "ltv_pct": ltv,
-        "damage_percent": float(item.get("damage_percent") or 0),
-        "damage_deduction": round(eligible_before - pledge),
-        "pledge_amount": round(pledge),
+        "loan_amount": round(net * rate),
         "unpriced": grade is None,
     }
 
 
 def value_inventory(inventory: List[dict], valuation: dict) -> Dict:
     items = [value_item(i, valuation) for i in inventory]
-    # Without a CaratMeter reading for every item the total is provisional.
+    # Without a Karatometer reading for every item the purity column is still provisional.
     measured = bool(inventory) and all(i.get("measurement") for i in inventory)
+    wastage_pct = wastage_pct_of(valuation)
+    rate = rate_per_gram_of(valuation)
+    gross = round(sum(i["gross_weight_g"] for i in items), 3)
+    net = net_of(gross, wastage_pct)
     return {
         "items": items,
         "totals": {
-            "weight_g": round(sum(i["weight_g"] for i in items), 3),
-            "gross_value": sum(i["gross_value"] for i in items),
-            "damage_deduction": sum(i["damage_deduction"] for i in items),
-            "pledge_amount": sum(i["pledge_amount"] for i in items),
+            "gross_weight_g": gross,
+            "wastage_pct": wastage_pct,
+            "wastage_g": round(gross - net, 3),
+            "net_weight_g": net,
+            "rate_per_gram": rate,
+            "max_loan_amount": round(net * rate),
+            # Kept under its original name so past runs in Reports and History still read.
+            "pledge_amount": round(net * rate),
             "is_estimate": not measured,
             "unpriced": [i["name"] for i in items if i["unpriced"]],
         },
-        "damage_deduction_mode": valuation.get("damage_deduction", "tenths"),
     }

@@ -39,7 +39,7 @@ const SHOW_ITEMS = oneOf([
   "pledged items", "pledged inventory", "pledged details", "show pledged details", "show the pledged details",
   "inventory", "items", "list items", "list the items", "show details", "show the details", "show collateral details",
 ]);
-const MEASURE = oneOf(["measure", "assay", "fetch readings", "fetch", "get readings", "fetch purity", "get purity", "caratmeter", "carat meter", "measure purity", "re-measure", "remeasure", "re-assay", "measure again"]);
+const MEASURE = oneOf(["measure", "assay", "fetch readings", "fetch", "get readings", "fetch purity", "get purity", "caratmeter", "carat meter", "karatometer", "karat meter", "karatmeter", "measure purity", "re-measure", "remeasure", "re-assay", "measure again"]);
 const SCALE_PHOTO = oneOf(["scale photo", "machine photo", "weighing machine", "weighing machine photo", "upload scale", "upload scale photo", "upload machine photo", "weigh total", "total weight"]);
 const UPLOAD_DOCS = oneOf(["upload", "upload document", "upload documents", "upload aadhaar", "add document", "upload id", "upload id proof", "upload kyc"]);
 

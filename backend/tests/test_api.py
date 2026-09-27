@@ -166,6 +166,72 @@ def test_apportioned_weights_can_be_replaced_without_a_justification(client, fak
     assert ok.status_code == 200 and len(ok.json()["session"]["audit"]) == 1
 
 
+def test_a_failed_collateral_photo_can_be_removed(client, fake_bedrock):
+    """A capture the assessor is re-taking leaves the session entirely — photo and all."""
+    fake_bedrock.collateral_status = "fail"
+    sid = start(client)["session_id"]
+    _, _, s = step(client, sid, "collateral", files=[("collateral_images", photo())])
+    assert len(s["collateral"]["images"]) == 1 and s["collateral"]["images"][0]["status"] == "fail"
+    assert s["inventory"] == []  # an unusable photo never lists anything
+
+    res = client.post("/api/chat/collateral/remove", json={"session_id": sid, "index": 0})
+    assert res.status_code == 200, res.text
+    s = res.json()["session"]
+    assert s["collateral"]["images"] == []
+    assert s["audit"][-1]["target"] == "collateral" and "removed" in s["audit"][-1]["new_value"]
+    assert client.post("/api/chat/collateral/remove", json={"session_id": sid, "index": 0}).status_code == 409
+
+    # A usable capture lists ornaments; removing it takes the unweighed ones with it.
+    fake_bedrock.collateral_status = "pass"
+    _, _, s = step(client, sid, "collateral", files=[("collateral_images", photo())])
+    assert [r["id"] for r in s["inventory"]] == ["item-1", "item-2", "item-3"]
+    weigh(client, sid, {"item-1": 10})
+    body = client.post("/api/chat/collateral/remove", json={"session_id": sid, "index": 0}).json()
+    assert [r["id"] for r in body["session"]["inventory"]] == ["item-1"]  # the weighed one stays
+    assert sorted(body["removed_ornaments"]) == ["Gold Bangle", "Gold Ring"]
+
+
+def test_the_report_is_submitted_once_the_customer_signs(client, fake_bedrock):
+    fake_bedrock.scale_weight_g = 33.0
+    sid = start(client)["session_id"]
+    step(client, sid, "collateral", files=[("collateral_images", photo())])
+    step(client, sid, "scale_photo", files=[("scale_image", photo("scale.png"))])
+    step(client, sid, "measure")
+    step(client, sid, "continue")  # damage -> valuation
+    step(client, sid, "continue")  # valuation -> document
+    step(client, sid, "document", files=[("documents", photo())], document_types=json.dumps(["Aadhaar Card"]))
+
+    # Nothing to sign until the report exists.
+    early = client.post("/api/chat/submit", json={
+        "session_id": sid, "signatures": [{"role": "customer", "name": "Rajesh Kumar", "kind": "drawn"}],
+    })
+    assert early.status_code == 409 and "Generate the report" in early.json()["error"]
+
+    step(client, sid, "report")
+    # The branch can sign, but the customer's signature is what submits it.
+    branch_only = client.post("/api/chat/submit", json={
+        "session_id": sid, "signatures": [{"role": "assessor", "name": "Divya Raghavan", "kind": "typed"}],
+    })
+    assert branch_only.status_code == 409 and "customer must sign" in branch_only.json()["error"]
+
+    res = client.post("/api/chat/submit", json={"session_id": sid, "signatures": [
+        {"role": "customer", "name": "Rajesh Kumar", "kind": "drawn"},
+        {"role": "assessor", "name": "Divya Raghavan", "kind": "typed"},
+        {"role": "nobody", "name": "Hacker", "kind": "typed"},  # unknown roles are dropped
+    ]})
+    assert res.status_code == 200, res.text
+    s = res.json()["session"]
+    assert [x["role"] for x in s["signatures"]] == ["customer", "assessor"]
+    assert s["signatures"][0]["kind"] == "drawn" and s["signatures"][0]["signed_at"]
+    assert s["report"]["submitted_at"] and s["report"]["signatures"][0]["name"] == "Rajesh Kumar"
+    assert s["audit"][-1]["target"] == "report" and "submitted" in s["audit"][-1]["new_value"]
+
+    again = client.post("/api/chat/submit", json={
+        "session_id": sid, "signatures": [{"role": "customer", "name": "Rajesh Kumar", "kind": "drawn"}],
+    })
+    assert again.status_code == 409 and "already been submitted" in again.json()["error"]
+
+
 def test_existing_loan_keeps_its_account(client):
     session = start(client, PRIYA)  # Renewal
     assert session["application"]["kind"] == "existing"
@@ -224,14 +290,25 @@ def test_full_happy_path_with_reports(client, fake_bedrock):
     run = [d["key"] for e, d in events if e == "exec-step" and d["status"] == "done"]
     assert run == ["connect", "request", "grade", "crosscheck", "valuation", "result"]
     assert all(r["measurement"] and r["carat"] for r in s["inventory"])
-    assert s["measurements"]["device"]["device_id"] == "CM-FED-MUM-001"
+    assert s["measurements"]["device"]["device_id"] == "KM-FED-MUM-001"
     assert s["workflow_state"] == "damage"
     assert s["stats"]["pledge_is_estimate"] is False and s["stats"]["pledge_amount"] > 0
 
-    hints = [{"ornament_id": "item-2", "type": "Dent", "severity": "moderate", "damage_percent": 8, "details": "Dent on rim"}]
+    # Damage is documented, with a close-up when there is one to take and without when there isn't.
+    hints = [
+        {"ornament_id": "item-2", "type": "Dent", "severity": "moderate", "details": "Dent on rim", "photo": True},
+        {"ornament_id": "item-3", "type": "Scratch", "severity": "minor", "details": "Hairline", "photo": False},
+    ]
     _, _, s = step(client, sid, "damage", files=[("damage_images", photo("d1.png"))], damage_hints=json.dumps(hints))
-    assert len(s["damages"]) == 1 and s["damages"][0]["damage_percent"] == 8
-    assert next(r for r in s["inventory"] if r["id"] == "item-2")["damage_percent"] == 8
+    assert len(s["damages"]) == 2
+    assert "damage_percent" not in s["damages"][0]
+    with_photo = next(d for d in s["damages"] if d["ornament_id"] == "item-2")
+    without = next(d for d in s["damages"] if d["ornament_id"] == "item-3")
+    assert with_photo["asset_id"] and with_photo["status"] == "pass"
+    assert without["asset_id"] is None and without["status"] == "not_checked"
+    assert all(r["damaged"] for r in s["inventory"] if r["id"] in ("item-2", "item-3"))
+    # Damage does not move the loan amount.
+    assert s["stats"]["max_loan_amount"] == round(s["stats"]["net_weight"] * 8500)
 
     _, events, s = step(client, sid, "continue")
     assert s["workflow_state"] == "valuation" and s["valuation"]["totals"]["pledge_amount"] > 0
@@ -330,7 +407,7 @@ def test_caratmeter_failure_is_reported_and_retryable(client, fake_bedrock, monk
     weigh(client, sid, {"item-1": 10, "item-2": 11, "item-3": 12})
 
     async def offline(*_args, **_kwargs):
-        raise caratmeter.CaratMeterError("The CaratMeter didn't respond. Check the device connection and try again.")
+        raise caratmeter.CaratMeterError("The Karatometer didn't respond. Check the device connection and try again.")
 
     monkeypatch.setattr(caratmeter, "measure", offline)
     _, events, s = step(client, sid, "measure")
@@ -388,15 +465,20 @@ def test_damage_and_document_validation(client, fake_bedrock):
 
     weigh(client, sid, {"item-1": 10, "item-2": 11, "item-3": 12})
     step(client, sid, "measure")
-    bad = [{"ornament_id": "not-mine", "type": "Dent", "severity": "minor", "details": ""}]
+    bad = [{"ornament_id": "not-mine", "type": "Dent", "severity": "minor", "details": "", "photo": True}]
     res, _, _ = step(client, sid, "damage", files=[("damage_images", photo())], damage_hints=json.dumps(bad))
     assert res.status_code == 400
-    over = [{"ornament_id": "item-1", "type": "Dent", "severity": "minor", "damage_percent": 140, "details": ""}]
-    res, _, _ = step(client, sid, "damage", files=[("damage_images", photo())], damage_hints=json.dumps(over))
-    assert res.status_code == 400 and "between 0 and 100" in res.json()["error"]
-    other = [{"ornament_id": "item-1", "type": "Other", "severity": "minor", "details": ""}]
+    # A photo the hints did not ask for (or one they asked for and did not send) is refused.
+    mismatched = [{"ornament_id": "item-1", "type": "Dent", "severity": "minor", "details": "", "photo": False}]
+    res, _, _ = step(client, sid, "damage", files=[("damage_images", photo())], damage_hints=json.dumps(mismatched))
+    assert res.status_code == 400 and "do not match" in res.json()["error"]
+    other = [{"ornament_id": "item-1", "type": "Other", "severity": "minor", "details": "", "photo": True}]
     res, _, _ = step(client, sid, "damage", files=[("damage_images", photo())], damage_hints=json.dumps(other))
     assert res.status_code == 400 and "Describe" in res.json()["error"]
+    # No photo at all is a perfectly good damage record.
+    none_photo = [{"ornament_id": "item-1", "type": "Dent", "severity": "minor", "details": "Small dent", "photo": False}]
+    _, _, s = step(client, sid, "damage", damage_hints=json.dumps(none_photo))
+    assert len(s["damages"]) == 1 and s["damages"][0]["asset_id"] is None
 
     step(client, sid, "continue")  # damage -> valuation
     step(client, sid, "continue")  # valuation -> document
@@ -478,33 +560,38 @@ def test_settings_are_validated_and_clamped(client):
 
 
 def test_valuation_settings_are_validated_and_captured_per_session(client, fake_bedrock):
+    fake_bedrock.scale_weight_g = 33.0
     body = client.get("/api/settings").json()
     assert [m["key"] for m in body["valuation"]["materials"]] == ["gold", "silver"]
-    assert body["damage_deduction"] == "tenths"
+    assert body["rate_per_gram"] == 8500 and body["wastage_pct"] == 3.0
 
-    def pledge_for(session_id):
-        weigh(client, session_id, {"item-1": 10, "item-2": 11, "item-3": 12})
+    def loan_for(session_id):
+        step(client, session_id, "scale_photo", files=[("scale_image", photo("scale.png"))])
         step(client, session_id, "measure")
-        return client.get(f"/api/chat/session/{session_id}").json()["session"]["stats"]["pledge_amount"]
+        return client.get(f"/api/chat/session/{session_id}").json()["session"]["stats"]["max_loan_amount"]
 
     before_id = start(client)["session_id"]
     step(client, before_id, "collateral", files=[("collateral_images", photo())])
-    before = pledge_for(before_id)
+    before = loan_for(before_id)
+    assert before == round(33.0 * 0.97 * 8500)
 
     valuation = body["valuation"]
-    valuation["materials"][0]["ltv_pct"] = 60
     valuation["materials"].append({"key": "Platinum 950", "name": "Platinum", "ltv_pct": 65,
                                    "grades": [{"grade": "pt950", "fineness_pct": 95, "rate_per_gram": 3100}]})
-    res = client.put("/api/settings", json={"valuation": valuation, "weight_tolerance_g": 9, "damage_deduction": "percent"})
+    res = client.put("/api/settings", json={
+        "valuation": valuation, "weight_tolerance_g": 9, "rate_per_gram": 6000, "wastage_pct": 40,
+    })
     assert res.status_code == 200, res.text
     saved = res.json()
     assert saved["valuation"]["materials"][2]["key"] == "platinum-950" and saved["valuation"]["materials"][2]["grades"][0]["grade"] == "PT950"
-    assert saved["weight_tolerance_g"] == 5.0 and saved["damage_deduction"] == "percent"
+    assert saved["weight_tolerance_g"] == 5.0          # clamped
+    assert saved["rate_per_gram"] == 6000 and saved["wastage_pct"] == 25.0  # wastage clamped to 25 %
 
     after_id = start(client)["session_id"]
     step(client, after_id, "collateral", files=[("collateral_images", photo())])
-    assert pledge_for(after_id) < before  # LTV 60 % applies to new sessions only
-    assert client.get(f"/api/chat/session/{before_id}").json()["session"]["stats"]["pledge_amount"] == before
+    assert loan_for(after_id) == round(33.0 * 0.75 * 6000)  # the new rate and wastage
+    # The session that started earlier keeps the rate it captured.
+    assert client.get(f"/api/chat/session/{before_id}").json()["session"]["stats"]["max_loan_amount"] == before
 
     dup = {"materials": [{"key": "gold", "name": "Gold", "ltv_pct": 75, "grades": [
         {"grade": "22K", "fineness_pct": 91.6, "rate_per_gram": 1}, {"grade": "22k", "fineness_pct": 91.6, "rate_per_gram": 1}]}]}
@@ -515,7 +602,7 @@ def test_valuation_settings_are_validated_and_captured_per_session(client, fake_
 
 def test_mock_caratmeter_gateway(client):
     status = client.get("/api/integrations/caratmeter/v1/status", params={"branch": "FED-COK-006"}).json()
-    assert status["device_id"] == "CM-FED-COK-006" and status["connected"] is True
+    assert status["device_id"] == "KM-FED-COK-006" and status["connected"] is True
     body = {"branch": "FED-COK-006", "application": "APP-2026-00007", "customer_id": "CBS100098", "samples": [
         {"tag": "item-1", "material": "gold", "entered_weight_g": 18},
         {"tag": "item-2", "material": "gold", "entered_weight_g": 8},
@@ -564,7 +651,7 @@ def test_answer_uses_session_context(client, fake_bedrock):
     weigh(client, sid, {"item-1": 10, "item-2": 11, "item-3": 12})
     step(client, sid, "measure")
     context = _qa_context(S.view(session_store.load(sid), get_settings()))
-    assert context["pledge"]["totals"]["pledge_amount"] > 0
+    assert context["loan"]["totals"]["max_loan_amount"] > 0
     assert context["inventory"][0]["entered_weight_g"] == 10
     assert context["inventory"][0]["listed_from"] == "collateral photo"
     assert "id_number" not in context["loan"] and len(_json.dumps(context)) < 9000  # nothing is cut off

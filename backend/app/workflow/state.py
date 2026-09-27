@@ -10,7 +10,7 @@ inventory:
     1. collateral  the assessor photographs the ornaments; the agent detects and crops each one
                    and THAT becomes the inventory (editable: rename, weigh, add, remove)
     2. weight      the weighing-machine photo gives the total, the agent apportions it across the
-                   ornaments (editable), and one CaratMeter request per loan application returns
+                   ornaments (editable), and one Karatometer request per loan application returns
                    the purity of every item
     3. damage      a photo, severity and damage % per damaged ornament
     4. valuation   pledge amount = weight × rate for the assessed purity × LTV − damage
@@ -23,13 +23,13 @@ Session document (JSON):
                   customer_name, mobile, scenario, branch, id_number, address}
     application  {reference, kind: fresh|existing, opened_at}
     valuation    {materials, weight_tolerance_g, purity_tolerance_pct, damage_deduction}  # captured at start
-    inventory    [{id, name, material, carat, weight_gm, quantity, damage_percent, origin, status,
+    inventory    [{id, name, material, carat, weight_gm, quantity, damaged, origin, status,
                    thumb_asset_id, source_image, measurement, measurement_status, measurement_overridden}]
     collateral   {images: [...], overall_status, issues, corrective_actions, detections}
     scale        None | {weight_g, text, source: photo|assessor, asset_id, filename, status, issues, recorded_at}
     scale_overridden  bool
-    measurements None | {device, measured_at, count}          # one CaratMeter run per application
-    damages      [{ornament_id, item, type, severity, damage_percent, assessor_details, asset_id,
+    measurements None | {device, measured_at, count}          # one Karatometer run per application
+    damages      [{ornament_id, item, type, severity, assessor_details, asset_id,
                    thumb_asset_id, filename, status, consistent, observed, additional, assessed_severity,
                    notes, capture_issues, corrective_actions, overridden, recorded_at}]
     documents    None | {items: [...], overall_status, issues, corrective_actions}
@@ -43,10 +43,19 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, Iterable, List, Optional
 
-from app.valuation import grade_by_name, grade_for_fineness, material_config, norm_grade, value_inventory
+from app.valuation import (
+    grade_by_name,
+    grade_for_fineness,
+    material_config,
+    net_of,
+    norm_grade,
+    rate_per_gram_of,
+    value_inventory,
+    wastage_pct_of,
+)
 
-# v3 added the CaratMeter step, v4 the pledge valuation review, v5 the photo-built inventory with
-# assessor-entered weights. Older sessions keep the steps and rules they started with.
+# v3 added the Karatometer step, v4 the valuation review, v5 the photo-built inventory whose
+# weights come from the weighing-machine photo. Older sessions keep the rules they started with.
 VERSION = 5
 
 WORKFLOW = ("collateral", "weight", "damage", "valuation", "document", "report", "done")
@@ -73,7 +82,7 @@ ITEM_ORIGINS = ("detected", "manual")
 CHECKED = ("pass", "alert", "fail")
 _RANK = {"pass": 0, "alert": 1, "fail": 2}
 
-# CaratMeter reading status per item. Everything except "match" (and "pending") needs review.
+# Karatometer reading status per item. Everything except "match" (and "pending") needs review.
 MEASURE_FLAGS = ("weight_mismatch", "ungraded", "mismatch", "missing")
 MAX_SCALE_G = 50_000
 MAX_ITEM_G = 5_000
@@ -154,7 +163,7 @@ def uses_weight(state: dict) -> bool:
 
 
 def uses_valuation(state: dict) -> bool:
-    """Sessions created before the Pledge valuation step (v3 and older) skip it."""
+    """Sessions created before the loan valuation step (v3 and older) skip it."""
     return version_of(state) >= 4
 
 
@@ -234,11 +243,12 @@ def new_state(
         "documents": None,
         "audit": [],
         "report": None,
+        "signatures": [],
     }
 
 
 def _new_ref(state: dict) -> str:
-    """The next ornament id. These ids are what the CaratMeter request is keyed on."""
+    """The next ornament id. These ids are what the Karatometer request is keyed on."""
     ref = int(state.get("next_ref") or (len(state["inventory"]) + 1))
     state["next_ref"] = ref + 1
     return f"item-{ref}"
@@ -275,12 +285,12 @@ def new_item(
         "id": ref,
         "name": name,
         "material": material,
-        "carat": "",  # unknown until the CaratMeter reads it
+        "carat": "",  # unknown until the Karatometer reads it
         "weight_gm": float(weight_gm or 0),
         "weight_source": "assessor" if float(weight_gm or 0) > 0 else "",  # "ai" once apportioned
         "weight_basis": "",  # the agent's one-phrase reason for this share
         "quantity": int(quantity or 1),
-        "damage_percent": 0.0,
+        "damaged": False,
         "origin": origin,
         "status": origin,
         "thumb_asset_id": thumb_asset_id,
@@ -327,7 +337,7 @@ def unresolved(entries: Iterable[dict], statuses: tuple) -> List[dict]:
 
 
 def unresolved_measurements(state: dict) -> List[dict]:
-    """Items whose CaratMeter reading disagrees with the entered weight (or is missing/ungraded)."""
+    """Items whose Karatometer reading disagrees with the entered weight (or is missing/ungraded)."""
     if not state.get("measurements"):
         return []
     return [
@@ -374,22 +384,18 @@ def stage_blockers(state: dict, stage: str, blocker_mode: bool) -> List[str]:
                 "photo, or type the weights on the pledge list."
             )
         if not state.get("measurements"):
-            reasons.append("Fetch the purity readings from the CaratMeter first.")
+            reasons.append("Fetch the purity readings from the Karatometer first.")
         elif blocker_mode:
             flagged = unresolved_measurements(state)
             if flagged:
                 names = ", ".join(r["name"] for r in flagged[:3]) + ("…" if len(flagged) > 3 else "")
-                reasons.append(f"{len(flagged)} CaratMeter reading(s) need review ({names}). Re-measure or accept each.")
+                reasons.append(f"{len(flagged)} Karatometer reading(s) need review ({names}). Re-measure or accept each.")
         if blocker_mode and not state.get("scale_overridden") and weight_summary(state)["scale_status"] in ("pending", "missing"):
             reasons.append("Capture the weighing-machine photo (or enter the total) before continuing.")
     elif stage == "valuation":
-        if blocker_mode:
-            unpriced = value_inventory(state["inventory"], valuation_of(state))["totals"]["unpriced"]
-            if unpriced:
-                reasons.append(
-                    "No rate is configured for the purity of " + ", ".join(unpriced) +
-                    ". Add the grade in Settings, or correct the item."
-                )
+        # The loan is sized on net weight, so an ungraded purity no longer blocks it; the
+        # Karatometer findings for those ornaments are already raised at the weight step.
+        pass
     elif stage == "damage" and blocker_mode:
         failed = unresolved(state["damages"], ("fail",))
         if failed:
@@ -519,6 +525,48 @@ def record_collateral(state: dict, images: List[dict], result: Optional[dict]) -
     return added
 
 
+def remove_collateral_image(state: dict, index: int) -> dict:
+    """Drop one collateral photo from the session — a capture the assessor is re-taking.
+
+    The ornaments it produced go with it, unless they have since been weighed or assayed (that is
+    the assessor's work, not the photo's). Remaining photos keep their upload numbers and are
+    re-indexed so the list stays contiguous.
+    """
+    require_open(state)
+    images = state["collateral"]["images"]
+    target = next((im for im in images if int(im.get("index", -1)) == int(index)), None)
+    if target is None:
+        raise WorkflowError("That photo is not part of this verification.")
+
+    kept = [im for im in images if im is not target]
+    dropped_ornaments = [
+        r for r in state["inventory"]
+        if r.get("source_image") == target.get("index")
+        and not float(r.get("weight_gm") or 0) > 0
+        and not r.get("measurement")
+    ]
+    dropped_ids = {r["id"] for r in dropped_ornaments}
+    state["inventory"] = [r for r in state["inventory"] if r["id"] not in dropped_ids]
+    state["damages"] = [d for d in state["damages"] if d["ornament_id"] not in dropped_ids]
+
+    # Re-index what is left, and move any surviving ornament's pointer with it.
+    moved = {}
+    for position, im in enumerate(kept):
+        moved[im["index"]] = position
+        im["index"] = position
+    for row in state["inventory"]:
+        if row.get("source_image") in moved:
+            row["source_image"] = moved[row["source_image"]]
+    state["collateral"]["images"] = kept
+
+    entry = _audit_entry(
+        "collateral", str(index), target.get("filename") or f"Photo {int(index) + 1}",
+        f"{target.get('status', 'not_checked')} capture", "removed by the assessor", "",
+    )
+    state["audit"].append(entry)
+    return {"entry": entry, "removed_ornaments": [r["name"] for r in dropped_ornaments]}
+
+
 def collateral_complete(state: dict) -> bool:
     """True when the photos produced an inventory and the latest capture is usable."""
     if not state["collateral"]["images"] or not state["inventory"]:
@@ -618,7 +666,7 @@ def set_item_weight(state: dict, ref: str, weight_gm, justification: str = "") -
 
 # --------------------------------------------------------------------------- weight & purity
 def _reading(m) -> Optional[tuple]:
-    """(weight_g, fineness_pct) from one CaratMeter measurement, or None if it is unusable."""
+    """(weight_g, fineness_pct) from one Karatometer measurement, or None if it is unusable."""
     if not isinstance(m, dict):
         return None
     try:
@@ -631,7 +679,7 @@ def _reading(m) -> Optional[tuple]:
 
 
 def measurement_status(row: dict, valuation: dict) -> str:
-    """How a CaratMeter reading compares with the weight the assessor entered."""
+    """How a Karatometer reading compares with the weight the assessor entered."""
     m = row.get("measurement")
     if not m:
         return "missing"
@@ -647,21 +695,21 @@ def measurement_status(row: dict, valuation: dict) -> str:
 
 
 def measurement_issue(row: dict) -> str:
-    """One-line description of an item's CaratMeter finding for reports and audit."""
+    """One-line description of an item's Karatometer finding for reports and audit."""
     m = row.get("measurement")
     status = row.get("measurement_status")
     if not m or status == "missing":
-        return "no CaratMeter reading"
+        return "no Karatometer reading"
     parts = []
     if status in ("weight_mismatch", "mismatch"):
-        parts.append(f"CaratMeter weighed {_grams(m['weight_g'])} g against {_grams(row['weight_gm'])} g entered")
+        parts.append(f"Karatometer weighed {_grams(m['weight_g'])} g against {_grams(row['weight_gm'])} g entered")
     if status in ("ungraded", "mismatch"):
         parts.append(f"purity {m['fineness_pct']:g}% is below every configured {row.get('material', 'gold')} grade")
     return "; ".join(parts) or "reading accepted"
 
 
 def record_measurements(state: dict, payload: dict) -> None:
-    """Store one CaratMeter run for this loan application: grade every reading against the
+    """Store one Karatometer run for this loan application: grade every reading against the
     session's valuation table and compare its weight with the one entered by the assessor.
     A fresh run replaces earlier readings and any acceptances."""
     valuation = valuation_of(state)
@@ -784,7 +832,7 @@ def _scale_of(r: dict) -> dict:
 
 
 def weight_summary(state: dict) -> dict:
-    """The three weights that must agree: per ornament, the weighing machine, the CaratMeter."""
+    """Gross, wastage and net, plus the three readings that must agree (pledge list, machine, device)."""
     inv = state["inventory"]
     valuation = valuation_of(state)
     item_tolerance = float(valuation.get("weight_tolerance_g", 0.1))
@@ -810,7 +858,17 @@ def weight_summary(state: dict) -> dict:
     for r in inv:
         status = r.get("measurement_status") or "pending"
         counts[status] = counts.get(status, 0) + 1
+    # The branch's chain: gross (what the machine read, or the pledge list if it could not be
+    # read) less a fixed wastage percentage leaves the net weight the loan is sized on.
+    gross = float(scale_g) if scale_g is not None else entered
+    wastage_pct = wastage_pct_of(valuation)
+    net = net_of(gross, wastage_pct)
     return {
+        "gross_g": round(gross, 3),
+        "wastage_pct": wastage_pct,
+        "wastage_g": round(gross - net, 3),
+        "net_g": net,
+        "rate_per_gram": rate_per_gram_of(valuation),
         "entered_g": entered,
         "measured_g": measured,
         "measured_complete": complete,
@@ -872,11 +930,15 @@ def apply_scale_reading(state: dict, weight_g, justification: str) -> dict:
 
 # --------------------------------------------------------------------------- damage
 def record_damage(state: dict, entry: dict) -> None:
-    """Insert or replace (by ornament) a damage record. New evidence clears a prior override."""
+    """Insert or replace (by ornament) a damage record. New evidence clears a prior override.
+
+    Damage is documented, not priced: it is reported to the approving officer and carried into the
+    report, and it does not reduce the loan amount.
+    """
     entry = {**entry, "overridden": False, "recorded_at": now_iso()}
     row = find_item(state, entry["ornament_id"])
     if row is not None:
-        row["damage_percent"] = float(entry.get("damage_percent") or 0)
+        row["damaged"] = True
     for i, existing in enumerate(state["damages"]):
         if existing["ornament_id"] == entry["ornament_id"]:
             state["damages"][i] = entry
@@ -976,7 +1038,7 @@ def apply_override(state: dict, target: str, ref: str, justification: str) -> di
         if row is None:
             raise WorkflowError("Unknown inventory item.")
         if not state.get("measurements") or row.get("measurement_overridden") or row.get("measurement_status") not in MEASURE_FLAGS:
-            raise WorkflowError(f"The CaratMeter reading for {row['name']} does not need an override.")
+            raise WorkflowError(f"The Karatometer reading for {row['name']} does not need an override.")
         row["measurement_overridden"] = True
         entry = _audit_entry("measurement", ref, row["name"], measurement_issue(row), "accepted by assessor", justification)
     elif target == "scale":
@@ -1071,12 +1133,10 @@ def apply_edit(state: dict, ref: str, changes: dict, justification: str) -> Opti
 
 # --------------------------------------------------------------------------- report
 def valuation_view(state: dict) -> dict:
-    """Pledge amount per item and in total, from the session's valuation table."""
+    """Gross, wastage and net weight per ornament, and the maximum loan the net weight supports."""
     valuation = valuation_of(state)
     out = value_inventory(state["inventory"], valuation)
-    out["materials"] = [
-        {"key": m["key"], "name": m["name"], "ltv_pct": m["ltv_pct"]} for m in valuation.get("materials", [])
-    ]
+    out["materials"] = [{"key": m["key"], "name": m["name"]} for m in valuation.get("materials", [])]
     return out
 
 
@@ -1092,9 +1152,13 @@ def inventory_stats(state: dict) -> dict:
         "weighed": weights["weighed"],
         "damaged": len(state["damages"]),
         "total_weight": weights["entered_g"],
+        "gross_weight": totals["gross_weight_g"],
+        "net_weight": totals["net_weight_g"],
         "measured_weight": weights["measured_g"],
         "measured": sum(1 for r in inv if r.get("measurement")),
         "measurement_flags": weights["flagged"],
+        "max_loan_amount": totals["max_loan_amount"],
+        # Historical key: Reports and History read it from run records written before the rename.
         "pledge_amount": totals["pledge_amount"],
         "pledge_is_estimate": totals["is_estimate"],
     }
@@ -1119,7 +1183,7 @@ def review_reasons(state: dict) -> List[dict]:
         warn.append({"level": "warn", "text": f"{len(flagged)} collateral photo(s) flagged — {first}"})
     if uses_weight(state):
         if not state.get("measurements"):
-            warn.append({"level": "warn", "text": "Purity was not measured on the CaratMeter — no pledge amount can be computed"})
+            warn.append({"level": "warn", "text": "Purity was not measured on the Karatometer"})
         for r in unresolved_measurements(state):
             warn.append({"level": "warn", "text": f"{r['name']}: {measurement_issue(r)}"})
         scale = weight_summary(state)
@@ -1174,6 +1238,48 @@ def build_report(state: dict, report_id: Optional[str] = None, generated_at: Opt
         "valuation": valuation_view(state),
         "weight": weight_summary(state) if uses_weight(state) else None,
     }
+
+
+SIGNATORIES = ("customer", "assessor", "officer")
+MAX_SIGNATURE_NAME = 120
+
+
+def record_signatures(state: dict, signatures: List[dict]) -> dict:
+    """Capture the signatures taken at the counter and submit the verification.
+
+    The customer signs what they are pledging, so their signature is what makes a submission; the
+    branch signatures are recorded alongside it when they are given. Submitting is final: the
+    report is already generated, and this records who stood behind it and when.
+    """
+    report = state.get("report")
+    if not report:
+        raise WorkflowError("Generate the report before submitting it.")
+    if report.get("submitted_at"):
+        raise WorkflowError("This verification has already been submitted.")
+
+    clean: List[dict] = []
+    for entry in signatures or []:
+        if not isinstance(entry, dict):
+            continue
+        role = str(entry.get("role", "")).strip().lower()
+        if role not in SIGNATORIES or any(s["role"] == role for s in clean):
+            continue
+        clean.append({
+            "role": role,
+            "name": " ".join(str(entry.get("name") or "").split())[:MAX_SIGNATURE_NAME],
+            "kind": "drawn" if str(entry.get("kind")) == "drawn" else "typed",
+            "signed_at": now_iso(),
+        })
+    if not any(s["role"] == "customer" for s in clean):
+        raise WorkflowError("The customer must sign before the verification can be submitted.")
+
+    state["signatures"] = clean
+    report["signatures"] = clean
+    report["submitted_at"] = now_iso()
+    names = ", ".join(f"{s['role']} ({s['name'] or 'signed'})" for s in clean)
+    entry = _audit_entry("report", report["report_id"], "Verification report", "generated", f"submitted · {names}", "")
+    state["audit"].append(entry)
+    return entry
 
 
 def run_overall_status(state: dict) -> str:
@@ -1284,6 +1390,7 @@ def view(state: dict, settings) -> dict:
         "documents": documents,
         "audit": state["audit"],
         "report": state["report"],
+        "signatures": state.get("signatures") or [],
         "stats": inventory_stats(state),
         "allowed_actions": list(allowed_actions(state)),
         "gate": gate(state, blocker),

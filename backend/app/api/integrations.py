@@ -1,4 +1,4 @@
-"""Mock CaratMeter device gateway — the simulator served over HTTP.
+"""Mock Karatometer device gateway — the simulator served over HTTP.
 
   GET  /api/integrations/caratmeter/v1/status?branch=FED-MUM-001
   POST /api/integrations/caratmeter/v1/measurements   {branch, account_number, samples: [...]}

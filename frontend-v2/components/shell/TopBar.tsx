@@ -57,7 +57,7 @@ export default function TopBar() {
         <span className="h-8 w-px bg-line" />
         <div className="min-w-0">
           <div className="whitespace-nowrap text-[15px] font-bold leading-tight text-ink">GL Portal</div>
-          <div className="truncate text-xs text-ink-muted">Gold Loan Collateral Verification</div>
+          <div className="truncate text-xs text-ink-muted">Gold Loan Originating System</div>
         </div>
         {session && (
           <span className="hidden truncate rounded-full bg-brand-50 px-3 py-1 font-mono text-xs font-semibold text-brand-700 2xl:inline">

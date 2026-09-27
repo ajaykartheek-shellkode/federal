@@ -181,11 +181,14 @@ class Setting(Base):
     max_ornaments_per_image: Mapped[int] = mapped_column(Integer, default=12)
     foreign_object_threshold_pct: Mapped[int] = mapped_column(Integer, default=10)
     doc_match_threshold_pct: Mapped[int] = mapped_column(Integer, default=80)
-    # Pledge valuation: materials → purity grades (fineness %, rate/g) and LTV %.
+    # Purity grades per material (fineness %); the loan amount uses rate_per_gram below.
     valuation: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     weight_tolerance_g: Mapped[float] = mapped_column(Float, default=0.10)
     purity_tolerance_pct: Mapped[float] = mapped_column(Float, default=0.5)
     damage_deduction: Mapped[str] = mapped_column(String(16), default="tenths")
+    # Loan amount = net weight (gross less wastage) × this rate.
+    rate_per_gram: Mapped[float] = mapped_column(Float, default=8500)
+    wastage_pct: Mapped[float] = mapped_column(Float, default=3.0)
 
 
 # --------------------------------------------------------------------------- staff accounts

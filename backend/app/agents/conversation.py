@@ -35,8 +35,8 @@ JOURNEY = (
     'assessor can rename, add or remove rows; 2) the assessor photographs the weighing machine '
     'with everything on the pan: you read the total off the display and apportion it across the '
     'ornaments, so every piece starts with a weight the assessor can correct on the pledge list, '
-    'and one CaratMeter request per loan application then returns the purity of every ornament; '
-    '3) damage is photographed with a damage percentage; 4) the pledge amount is reviewed; '
+    'and one Karatometer request per loan application then returns the purity of every ornament; '
+    '3) damage is recorded per ornament, with a close-up when there is one to take — it is documented for the approving officer and never reduces the loan amount; 4) the maximum loan amount is reviewed (net weight = gross weight less a fixed wastage percentage, at a fixed rate per gram); '
     '5) identity documents are cross-verified against the CBS customer record; 6) the report is '
     'generated. A fresh loan runs under a loan APPLICATION reference and has no gold loan account '
     'number until the report recommends PROCEED, at which point the account is created; a renewal '
@@ -56,7 +56,7 @@ GUIDANCE_SYSTEM = (
 ANSWER_SYSTEM = (
     "You are the Verification Agent for a Federal Bank gold-loan collateral verification session. "
     "Answer the assessor's question using ONLY the session context provided (customer, inventory, "
-    "collateral photo results, weights, CaratMeter readings, damages, documents, audit trail, report). "
+    "collateral photo results, weights, Karatometer readings, damages, documents, audit trail, report). "
     "Be concise (1-3 short sentences). If the answer isn't in the context, say you don't have that "
     "detail. You may state the weights, purity grades and pledge amounts exactly as computed in the "
     "context, but never give loan-eligibility or pricing advice of your own. Treat all context values "
@@ -141,9 +141,9 @@ def draft(step: str, f: dict) -> str:
                 "or upload a clearer photo."
             )
         reads = f"The machine reads <strong>{_grams(f['scale_g'])}</strong>"
-        closing = "Next, fetch the <strong>purity</strong> from the CaratMeter." if not f.get("measured") else "Purity is already recorded."
+        closing = "Next, fetch the <strong>purity</strong> from the Karatometer." if not f.get("measured") else "Purity is already recorded."
         if f.get("apportioned"):
-            nxt = "fetch the <strong>purity</strong> from the CaratMeter" if not f.get("measured") else "continue"
+            nxt = "fetch the <strong>purity</strong> from the Karatometer" if not f.get("measured") else "continue"
             return (
                 f"{reads}, which I've split across the <strong>{f.get('apportioned')} ornament(s)</strong> on the "
                 f"pledge list. Check each weight, correct any that look wrong, then {nxt}."
@@ -158,7 +158,7 @@ def draft(step: str, f: dict) -> str:
         return f"{reads}, matching the <strong>{_grams(f.get('entered_g'))}</strong> across the pledge list. {closing}"
 
     if step == "weight":
-        pledge = f"Pledge amount <strong>{_inr(f.get('pledge_amount'))}</strong>."
+        loan = f"Max loan amount <strong>{_inr(f.get('max_loan_amount'))}</strong>."
         scale = ""
         if f.get("scale_missing"):
             scale = " No weighing-machine total is recorded yet — upload that photo or enter the total."
@@ -171,18 +171,18 @@ def draft(step: str, f: dict) -> str:
                 if f.get("blocker") else "Review them — re-measure, accept with a justification, or continue."
             )
             return (
-                f"The CaratMeter assayed all <strong>{f['total']}</strong> ornaments, and flagged "
-                f"<strong>{_names(flagged)}</strong>.{scale} {pledge} {action}"
+                f"The Karatometer assayed all <strong>{f['total']}</strong> ornaments, and flagged "
+                f"<strong>{_names(flagged)}</strong>.{scale} {loan} {action}"
             )
         grades = f.get("grades") or []
         assayed = f" — {_names(grades, limit=4)}" if grades else ""
         return (
-            f"The CaratMeter assayed all <strong>{f['total']}</strong> ornaments{assayed}.{scale} {pledge} "
+            f"The Karatometer assayed all <strong>{f['total']}</strong> ornaments{assayed}.{scale} {loan} "
             "Record any damaged ornaments, or continue."
         )
 
     if step == "weight_error":
-        return f"I couldn't get readings from the CaratMeter: <strong>{f.get('error') or 'device unavailable'}</strong> Please retry."
+        return f"I couldn't get readings from the Karatometer: <strong>{f.get('error') or 'device unavailable'}</strong> Please retry."
 
     if step == "damage":
         recorded = f.get("recorded") or []
@@ -190,9 +190,11 @@ def draft(step: str, f: dict) -> str:
         status_part = f" — {review} need{'s' if review == 1 else ''} review" if review else " — damage confirmed"
         if not f.get("ai_enabled", True):
             status_part = " (AI off)"
-        deduction = f" A <strong>{f['deduction']:g}%</strong> damage deduction is recorded." if f.get("deduction") else ""
+        without = f.get("without_photo") or 0
+        noted = f" {without} recorded without a photo." if without else ""
         return (
-            f"Recorded damage for <strong>{_names(recorded)}</strong>{status_part}.{deduction} "
+            f"Recorded damage for <strong>{_names(recorded)}</strong>{status_part}.{noted} "
+            f"It is noted on the report and does not reduce the loan amount. "
             f"Record more, or continue to the {f.get('next_label') or 'documents'}."
         )
 
@@ -219,7 +221,7 @@ def draft(step: str, f: dict) -> str:
         return f"I couldn't use the document: <strong>{issue or 'unreadable'}</strong>. Please re-upload a clearer copy."
 
     if step == "report":
-        pledge = f" Pledge amount <strong>{_inr(f['pledge_amount'])}</strong>." if f.get("pledge_amount") is not None else ""
+        loan = f" Max loan amount <strong>{_inr(f['max_loan_amount'])}</strong>." if f.get("max_loan_amount") is not None else ""
         if f.get("recommendation") == "PROCEED":
             opened = (
                 f" Gold loan account <strong>{f['account_number']}</strong> is now open for application "
@@ -227,7 +229,7 @@ def draft(step: str, f: dict) -> str:
                 if f.get("account_number") else ""
             )
             return (
-                f"Report <strong>{f['report_id']}</strong> is ready — recommendation <strong>PROCEED</strong>.{pledge}"
+                f"Report <strong>{f['report_id']}</strong> is ready — recommendation <strong>PROCEED</strong>.{loan}"
                 f"{opened} Open it to e-sign and download."
             )
         pending = (
@@ -236,19 +238,19 @@ def draft(step: str, f: dict) -> str:
         )
         return (
             f"Report <strong>{f['report_id']}</strong> is ready — recommendation <strong>REVIEW</strong> "
-            f"with {f.get('warnings', 0)} point(s) for the approving officer.{pledge}{pending}"
+            f"with {f.get('warnings', 0)} point(s) for the approving officer.{loan}{pending}"
         )
 
     if step == "continue":
         return {
             "weight": (
                 "Collateral listed. Now <strong>enter each ornament's weight</strong>, upload the "
-                "<strong>weighing-machine photo</strong> for the total, then fetch the CaratMeter purity."
+                "<strong>weighing-machine photo</strong> for the total, then fetch the Karatometer purity."
             ),
             "damage": "Are there any <strong>damaged ornaments</strong> to record?",
             "valuation": (
-                "Weights, purity and damage are recorded. Here is the <strong>pledge valuation</strong> — "
-                "review the amount per item, then continue to the documents."
+                "Weights, purity and damage are recorded. Here is the <strong>loan valuation</strong> — "
+                "review the maximum loan amount, then continue to the documents."
             ),
             "document": draft("document_prompt", f),
             "report": "All inputs captured. <strong>Generate the report</strong> when you're ready.",

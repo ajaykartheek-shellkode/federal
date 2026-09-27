@@ -8,7 +8,7 @@ import Button from "@/components/ui/Button";
 import Dialog from "@/components/ui/Dialog";
 import { FieldError, Input, Label, Select } from "@/components/ui/Field";
 import Icon from "@/components/ui/Icon";
-import { cn, DAMAGE_DEDUCTION_META, purityLabel } from "@/lib/format";
+import { cn, purityLabel } from "@/lib/format";
 import type { DamageEntry, InventoryItem, SessionView, Severity } from "@/lib/types";
 import { DropZone, FileChip, validateFile } from "./FilePick";
 
@@ -17,8 +17,8 @@ interface Row {
   ornamentId: string;
   type: string;
   severity: Severity;
-  damagePercent: string;
   details: string;
+  /** Optional: damage is recorded on the assessor's word, and a close-up is evidence when there is one. */
   file: File | null;
 }
 
@@ -33,18 +33,13 @@ const guessType = (text: string) => {
   return "Other";
 };
 
-/** A damage percentage the branch would typically apply for this severity, as a starting point. */
-const SEVERITY_PERCENT: Record<Severity, string> = { minor: "4", moderate: "8", severe: "15" };
-
 let rowSeq = 0;
 function rowFor(item?: InventoryItem, existing?: DamageEntry): Row {
-  const severity = existing?.severity ?? "moderate";
   return {
     key: `row-${rowSeq++}`,
     ornamentId: item?.id ?? "",
     type: existing?.type ?? (existing?.assessor_details ? guessType(existing.assessor_details) : "Dent"),
-    severity,
-    damagePercent: existing?.damage_percent ? String(existing.damage_percent) : SEVERITY_PERCENT[severity],
+    severity: existing?.severity ?? "moderate",
     details: existing?.assessor_details ?? "",
     file: null,
   };
@@ -80,10 +75,7 @@ export default function DamageDialog({ open, ornamentId, onClose }: { open: bool
 
   const problems = rows.map((r) => {
     if (!r.ornamentId) return "Choose the damaged ornament.";
-    if (!r.file) return "Attach a close-up photo of the damage.";
     if (r.type === "Other" && !r.details.trim()) return "Describe the damage.";
-    const pct = Number(r.damagePercent);
-    if (!(r.damagePercent.trim() !== "" && pct >= 0 && pct <= 100)) return "Enter a damage percentage between 0 and 100.";
     return "";
   });
   const valid = rows.length > 0 && problems.every((p) => !p);
@@ -95,9 +87,8 @@ export default function DamageDialog({ open, ornamentId, onClose }: { open: bool
       ornament_id: r.ornamentId,
       type: r.type,
       severity: r.severity,
-      damage_percent: Number(r.damagePercent),
       details: r.details.trim(),
-      file: r.file as File,
+      file: r.file,
     }));
     onClose();
     await runStep("damage", { damage: payload });
@@ -110,17 +101,19 @@ export default function DamageDialog({ open, ornamentId, onClose }: { open: bool
       size="lg"
       icon="alert"
       title="Record damaged ornaments"
-      subtitle="One close-up photo per damaged item, with the damage percentage that reduces its pledge amount."
+      subtitle="Noted on the report for the approving officer — a close-up helps, but is not required."
       footer={
         <>
           <span className="mr-auto text-xs text-ink-muted">
-            {state.busy ? "Wait for the current step to finish" : `${rows.length} item${rows.length === 1 ? "" : "s"} · analysed in parallel`}
+            {state.busy
+              ? "Wait for the current step to finish"
+              : `${rows.length} item${rows.length === 1 ? "" : "s"} · photos are checked in parallel`}
           </span>
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" icon="sparkles" disabled={!!state.busy || (touched && !valid)} onClick={submit}>
-            Analyse {rows.length > 1 ? `${rows.length} items` : "damage"}
+          <Button variant="primary" icon="check" disabled={!!state.busy || (touched && !valid)} onClick={submit}>
+            Record {rows.length > 1 ? `${rows.length} items` : "damage"}
           </Button>
         </>
       }
@@ -178,14 +171,14 @@ export default function DamageDialog({ open, ornamentId, onClose }: { open: bool
                       ))}
                     </Select>
                   </div>
-                  <div>
+                  <div className="md:col-span-2">
                     <Label>Severity (assessor)</Label>
                     <div className="grid grid-cols-3 gap-1.5">
                       {options.severities.map((s) => (
                         <button
                           key={s}
                           type="button"
-                          onClick={() => update(r.key, { severity: s, damagePercent: SEVERITY_PERCENT[s] })}
+                          onClick={() => update(r.key, { severity: s })}
                           className={cn(
                             "h-10 rounded-xl border text-xs font-semibold capitalize transition-colors",
                             r.severity === s ? "border-brand-500 bg-brand-50 text-brand-700 shadow-focus" : "border-line-strong text-ink-2 hover:border-brand-300"
@@ -194,25 +187,6 @@ export default function DamageDialog({ open, ornamentId, onClose }: { open: bool
                           {s}
                         </button>
                       ))}
-                    </div>
-                  </div>
-                  <div>
-                    <Label htmlFor={`${r.key}-pct`} required hint={DAMAGE_DEDUCTION_META[options.damage_deduction].hint}>
-                      Damage percentage
-                    </Label>
-                    <div className="relative">
-                      <Input
-                        id={`${r.key}-pct`}
-                        type="number"
-                        inputMode="decimal"
-                        min="0"
-                        max="100"
-                        step="1"
-                        value={r.damagePercent}
-                        onChange={(e) => update(r.key, { damagePercent: e.target.value })}
-                        className="pr-8 tabular-nums"
-                      />
-                      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-ink-muted">%</span>
                     </div>
                   </div>
                   <div className="md:col-span-2">
@@ -228,7 +202,7 @@ export default function DamageDialog({ open, ornamentId, onClose }: { open: bool
                     />
                   </div>
                   <div className="md:col-span-2">
-                    <Label required>Damage photo</Label>
+                    <Label hint="optional — evidence for the approving officer">Damage photo</Label>
                     {r.file ? (
                       <FileChip file={r.file} onRemove={() => update(r.key, { file: null })} />
                     ) : (

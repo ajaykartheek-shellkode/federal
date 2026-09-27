@@ -9,11 +9,11 @@ import { fetchCustomers, type SampleAccount } from "@/lib/api";
 import { fadeUp, stagger } from "@/lib/motion";
 
 const STEPS: { icon: IconName; title: string; text: string }[] = [
-  { icon: "camera", title: "Collateral photos", text: "Every ornament in the photo becomes a line on the pledge list, cropped and named" },
-  { icon: "weighScale", title: "Weight & purity", text: "The machine photo gives the total, I split it across the ornaments, and the CaratMeter assays every piece" },
+  { icon: "camera", title: "Collateral photos", text: "Every ornament in the photo becomes a line on the list, cropped and named" },
+  { icon: "weighScale", title: "Weight & purity", text: "The machine photo gives the gross weight, wastage comes off it, and the Karatometer assays every piece" },
   { icon: "alert", title: "Damage assessment", text: "Close-ups compared with the recorded damage description" },
   { icon: "idCard", title: "Document verification", text: "OCR and name, ID and address match against the CBS record" },
-  { icon: "doc", title: "Report & account", text: "Recommendation, audit trail and e-signatures — and the gold loan account on sanction" },
+  { icon: "doc", title: "Report & account", text: "Maximum loan amount, audit trail and signatures — and the gold loan account on sanction" },
 ];
 
 /** Digits only, grouped as the assessor types: 98200 41234. */
@@ -44,12 +44,12 @@ export default function WelcomeHero() {
           <Icon name="sparkles" size={14} /> AI-guided verification
         </p>
         <h1 className="mt-3 max-w-2xl text-[26px] font-bold leading-[1.15] text-white desk:text-[34px] desk:leading-[1.12]">
-          Verify gold loan collateral with <span className="text-gold-400">confidence</span>.
+          Originate a gold loan, <span className="text-gold-400">start to sanction</span>.
         </h1>
         <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/75 desk:text-[15px]">
-          Enter the customer&apos;s mobile number and the Verification Agent opens a loan application: the
-          collateral photo builds the pledge list, the weighing machine gives every ornament its weight, the
-          CaratMeter assays it, and the gold loan account is opened on sanction.
+          Enter the customer&apos;s mobile number and the agent opens a loan application: the collateral photo
+          builds the ornament list, the weighing machine gives the gross weight, the Karatometer assays the
+          purity, and the net weight sets the maximum loan — through to the gold loan account on sanction.
         </p>
         <form
           className="mt-6 flex max-w-lg flex-wrap items-center gap-2 rounded-2xl bg-white/10 p-2 ring-1 ring-white/15 backdrop-blur desk:mt-7"
@@ -70,7 +70,7 @@ export default function WelcomeHero() {
             className="h-11 min-w-0 flex-1 bg-transparent text-[15px] tracking-wide text-white outline-none placeholder:text-white/40"
           />
           <Button type="submit" variant="gold" size="lg" iconRight="arrowRight" loading={state.busy === "start"} disabled={!ready} className="w-full sm:w-auto">
-            Start verification
+            Start Entry
           </Button>
         </form>
 

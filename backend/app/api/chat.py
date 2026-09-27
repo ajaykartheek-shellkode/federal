@@ -16,7 +16,8 @@
   POST /api/chat/weight               {session_id, ref, weight_gm, justification} -> {session, entry}
 
 /step form fields: session_id, action (collateral|scale_photo|measure|damage|document|continue|report),
-damage_hints (JSON [{ornament_id, type, severity, damage_percent, details}] aligned with damage_images),
+damage_hints (JSON [{ornament_id, type, severity, details, photo}]; damage_images carries a
+  close-up for each hint whose "photo" is true — a photo is optional),
 document_types (JSON [type] aligned with documents), collateral_images[], scale_image[],
 damage_images[], documents[].
 """
@@ -209,12 +210,17 @@ def _build_inputs(state: dict, action: str, collateral: List[Asset], scale: List
 
     elif action == "damage":
         hints = _parse_json_list(damage_hints, "damage details")
-        if not damage or len(hints) != len(damage):
-            raise ApiError(400, "Each damaged item needs its details and one photo.")
-        if len(damage) > MAX_DAMAGE_ITEMS_PER_UPLOAD:
+        if not hints:
+            raise ApiError(400, "Record at least one damaged ornament.")
+        if len(hints) > MAX_DAMAGE_ITEMS_PER_UPLOAD:
             raise ApiError(400, f"Record at most {MAX_DAMAGE_ITEMS_PER_UPLOAD} damaged items at a time.")
+        # A close-up is optional, so the images line up with the hints that said they carry one.
+        wants_photo = [bool(h.get("photo")) if isinstance(h, dict) else False for h in hints]
+        if len(damage) != sum(wants_photo):
+            raise ApiError(400, "The damage photos do not match the items they were recorded for.")
+        photos = list(damage)
         seen: Set[str] = set()
-        for hint, image in zip(hints, damage):
+        for hint, has_photo in zip(hints, wants_photo):
             if not isinstance(hint, dict):
                 raise ApiError(400, "Invalid damage details.")
             oid = str(hint.get("ornament_id", ""))
@@ -228,17 +234,13 @@ def _build_inputs(state: dict, action: str, collateral: List[Asset], scale: List
                 raise ApiError(400, f"Unknown damage type '{dtype}'.")
             if severity not in S.SEVERITIES:
                 raise ApiError(400, f"Unknown severity '{severity}'.")
-            try:
-                damage_pct = round(float(hint.get("damage_percent") or 0), 2)
-            except (TypeError, ValueError):
-                raise ApiError(400, "The damage percentage must be a number.") from None
-            if not 0 <= damage_pct <= 100:
-                raise ApiError(400, "The damage percentage must be between 0 and 100.")
             details = " ".join(str(hint.get("details") or "").split())[:300]
             if dtype == "Other" and not details:
                 raise ApiError(400, "Describe the damage when the type is 'Other'.")
-            _check_image(image)
-            inputs.damage.append(flow.DamageUpload(oid, dtype, severity, damage_pct, details, image))
+            image = photos.pop(0) if has_photo else None
+            if image is not None:
+                _check_image(image)
+            inputs.damage.append(flow.DamageUpload(oid, dtype, severity, details, image))
 
     elif action == "document":
         types = _parse_json_list(document_types, "document types")
@@ -356,7 +358,6 @@ def _qa_context(v: dict) -> dict:
                 "item": r["name"], "material": r.get("material", "gold"), "purity": S.purity_label(r),
                 "entered_weight_g": r["weight_gm"], "quantity": r["quantity"],
                 "listed_from": "collateral photo" if r.get("origin", "detected") == "detected" else "added by assessor",
-                "damage_percent": r.get("damage_percent") or 0,
                 "caratmeter": (
                     {k: r["measurement"][k] for k in ("weight_g", "fineness_pct", "grade")} if r.get("measurement") else None
                 ),
@@ -368,17 +369,19 @@ def _qa_context(v: dict) -> dict:
             {"photo": im["index"] + 1, "status": im["status"], "issues": im["issues"]}
             for im in v["collateral"]["images"]
         ],
-        "weight": {k: weight.get(k) for k in ("entered_g", "measured_g", "scale_g", "scale_source", "scale_status", "scale_diff_g", "tolerance_g", "unweighed")},
-        "pledge": {
+        "weight": {k: weight.get(k) for k in (
+            "gross_g", "wastage_pct", "wastage_g", "net_g", "entered_g", "measured_g", "scale_g",
+            "scale_source", "scale_status", "scale_diff_g", "tolerance_g", "unweighed",
+        )},
+        "loan": {
             "totals": valuation.get("totals"),
-            "damage_rule": valuation.get("damage_deduction_mode"),
             "items": [
-                {k: i[k] for k in ("name", "grade", "weight_g", "weight_basis", "rate_per_gram", "ltv_pct", "pledge_amount")}
+                {k: i[k] for k in ("name", "grade", "gross_weight_g", "net_weight_g", "rate_per_gram")}
                 for i in valuation.get("items", [])
             ],
         },
         "damages": [
-            {k: d.get(k) for k in ("item", "type", "severity", "damage_percent", "status", "notes", "overridden")}
+            {k: d.get(k) for k in ("item", "type", "severity", "status", "notes", "overridden")}
             for d in v["damages"]
         ],
         "documents": [
@@ -500,6 +503,45 @@ async def add_item(body: AddItemBody):
 @router.post("/item/remove")
 async def remove_item(body: ItemRefBody):
     return await _mutate(body.session_id, lambda st: S.remove_item(st, body.ref, body.justification))
+
+
+class PhotoRefBody(BaseModel):
+    session_id: str
+    index: int = Field(ge=0, le=99)
+
+
+@router.post("/collateral/remove")
+async def remove_collateral_photo(body: PhotoRefBody):
+    """Drop a collateral photo the assessor is re-taking, with the ornaments only it produced."""
+    result: Dict[str, Any] = {}
+
+    def apply(st: dict):
+        out = S.remove_collateral_image(st, body.index)
+        result.update(out)
+        return out["entry"]
+
+    res = await _mutate(body.session_id, apply)
+    if isinstance(res, dict):
+        res["removed_ornaments"] = result.get("removed_ornaments", [])
+    return res
+
+
+class SignatureBody(BaseModel):
+    role: str = Field(max_length=24)
+    name: str = Field(default="", max_length=120)
+    kind: str = Field(default="typed", max_length=12)
+
+
+class SubmitBody(BaseModel):
+    session_id: str
+    signatures: List[SignatureBody] = Field(default_factory=list, max_length=5)
+
+
+@router.post("/submit")
+async def submit(body: SubmitBody):
+    """Submit the signed verification: the customer's signature, and the branch's alongside it."""
+    payload = [s.model_dump() for s in body.signatures]
+    return await _mutate(body.session_id, lambda st: S.record_signatures(st, payload))
 
 
 @router.post("/weight")

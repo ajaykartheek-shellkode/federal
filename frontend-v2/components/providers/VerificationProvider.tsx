@@ -10,7 +10,9 @@ import {
   enterScaleReading,
   getSession,
   overrideFinding,
+  removeCollateralPhoto,
   removeInventoryItem,
+  submitReport as submitReportApi,
   setItemWeight,
   startSession,
   streamStep,
@@ -21,7 +23,8 @@ import {
 import { parseIntent } from "@/lib/intents";
 import { initialState, reducer, type AppState, type DialogState, type NavView, type OverrideTarget, type Toast } from "@/lib/store";
 import type { SampleAccount, SessionView, StepAction } from "@/lib/types";
-import { WORKFLOW_STEPS } from "@/lib/format";
+import type { SignaturePayload } from "@/lib/api";
+import { plural, WORKFLOW_STEPS } from "@/lib/format";
 
 const STORAGE_KEY = "glportal.session";
 const WELCOME =
@@ -40,6 +43,8 @@ interface VerificationApi {
   setWeight: (ref: string, weightGm: number, justification?: string) => Promise<boolean>;
   addItem: (item: NewItem) => Promise<boolean>;
   removeItem: (ref: string, justification: string) => Promise<boolean>;
+  removePhoto: (index: number) => Promise<boolean>;
+  submitReport: (signatures: SignaturePayload[]) => Promise<boolean>;
   resume: (sessionId: string) => Promise<void>;
   revealItems: () => void;
   reset: () => void;
@@ -364,6 +369,33 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
     [mutate]
   );
 
+  const removePhoto = useCallback(
+    async (index: number) => {
+      const session = sessionRef.current;
+      if (!session) return false;
+      let ok = false;
+      await exclusive("mutate", async () => {
+        try {
+          const res = await removeCollateralPhoto(session.session_id, index);
+          setSession(res.session);
+          const dropped = res.removed_ornaments.length;
+          toast("ok", dropped ? `Photo removed · ${plural(dropped, "ornament")} taken off the list` : "Photo removed");
+          ok = true;
+        } catch (err) {
+          handleApiError(err, "Removing the photo");
+        }
+      });
+      return ok;
+    },
+    [exclusive, handleApiError, setSession, toast]
+  );
+
+  const submitReport = useCallback(
+    (signatures: SignaturePayload[]) =>
+      mutate((sid) => submitReportApi(sid, signatures), "Verification submitted with the signatures"),
+    [mutate]
+  );
+
   const setScaleReading = useCallback(
     (weightG: number, justification: string) =>
       mutate((sid) => enterScaleReading(sid, weightG, justification), "Scale reading recorded in the audit trail"),
@@ -407,6 +439,8 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
       setWeight,
       addItem,
       removeItem,
+      removePhoto,
+      submitReport,
       revealItems,
       resume,
       reset,
@@ -416,7 +450,7 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
       toast,
       dismissToast: (id) => dispatch({ type: "dismiss-toast", id }),
     }),
-    [state, start, runStep, send, override, editItem, setScaleReading, setWeight, addItem, removeItem, revealItems, resume, reset, toast]
+    [state, start, runStep, send, override, editItem, setScaleReading, setWeight, addItem, removeItem, removePhoto, submitReport, revealItems, resume, reset, toast]
   );
 
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;

@@ -109,7 +109,7 @@ export function AddItemDialog({ open, onClose }: { open: boolean; onClose: () =>
         {touched && <FieldError>{errors.quantity || errors.weight}</FieldError>}
         <p className="flex items-start gap-2 rounded-xl bg-brand-50 px-3 py-2 text-xs text-brand-700">
           <Icon name="info" size={14} className="mt-px shrink-0" />
-          Purity comes from the CaratMeter, so leave it — the weighing-machine photo gives this piece its weight.
+          Purity comes from the Karatometer, so leave it — the weighing-machine photo gives this piece its weight.
         </p>
       </div>
     </Dialog>
@@ -181,6 +181,66 @@ export function RemoveItemDialog({ open, refId, onClose }: { open: boolean; refI
             className="min-h-[64px]"
           />
         </div>
+      </div>
+    </Dialog>
+  );
+}
+
+/** Drop a collateral photo the assessor is re-taking — a failed capture, or the wrong frame. */
+export function RemovePhotoDialog({ open, index, onClose }: { open: boolean; index: number; onClose: () => void }) {
+  const { session, removePhoto, state } = useVerification();
+  const image = session?.collateral.images.find((im) => im.index === index);
+  if (!session || !image) return null;
+  const busy = state.busy === "mutate";
+  // Ornaments already weighed or assayed are the assessor's work; they stay on the list.
+  const going = session.inventory.filter(
+    (r) => r.source_image === image.index && !(r.weight_gm > 0) && !r.measurement
+  );
+
+  const submit = async () => {
+    if (await removePhoto(image.index)) onClose();
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      size="sm"
+      icon="trash"
+      title="Remove this photo"
+      subtitle="It leaves the verification and the report"
+      dismissable={!busy}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
+            Keep it
+          </Button>
+          <Button variant="danger" icon="trash" loading={busy} onClick={submit}>
+            Remove photo
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <div className="flex items-center gap-3 rounded-xl border border-line bg-subtle p-3">
+          <Thumb assetId={image.asset_id} alt={`Collateral photo ${image.index + 1}`} fallback="image" size={56} />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-ink">Photo {image.index + 1}</p>
+            <p className="truncate text-xs text-ink-muted">{image.filename || `Upload ${image.upload_no}`}</p>
+            {image.issues[0] && <p className="mt-0.5 truncate text-xs text-warn">{image.issues[0]}</p>}
+          </div>
+        </div>
+        {going.length > 0 && (
+          <p className="flex items-start gap-2 rounded-xl bg-warn-soft px-3 py-2 text-xs text-warn">
+            <Icon name="alert" size={14} className="mt-px shrink-0" />
+            {plural(going.length, "ornament")} listed only from this photo will be removed too:{" "}
+            {going.map((r) => r.name).join(", ")}.
+          </p>
+        )}
+        <p className="flex items-start gap-2 rounded-xl bg-brand-50 px-3 py-2 text-xs text-brand-700">
+          <Icon name="info" size={14} className="mt-px shrink-0" />
+          Recorded in the audit trail. Upload a fresh capture when you have re-taken it.
+        </p>
       </div>
     </Dialog>
   );

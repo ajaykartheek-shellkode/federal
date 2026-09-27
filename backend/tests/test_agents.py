@@ -177,22 +177,22 @@ def test_journey_drafts_are_fact_exact():
 
     split = conversation.draft("scale", {"ai_enabled": True, "scale_g": 33.05, "entered_g": 33.05,
                                          "apportioned": 3, "items": 3, "measured": False})
-    assert "33.05 g" in split and "3 ornament(s)" in split and "CaratMeter" in split
+    assert "33.05 g" in split and "3 ornament(s)" in split and "Karatometer" in split
 
     unread = conversation.draft("scale", {"ai_enabled": True, "scale_g": None, "first_issue": "Display not readable"})
     assert "Enter the total" in unread and "Display not readable" in unread
 
     flagged = conversation.draft("weight", {"total": 6, "measured": 6, "flagged": ["Gold Pendant"], "grades": ["22K"],
-                                            "pledge_amount": 410303, "blocker": True, "scale_missing": True})
+                                            "max_loan_amount": 410303, "blocker": True, "scale_missing": True})
     assert "Gold Pendant" in flagged and "₹4,10,303" in flagged and "justification" in flagged
     assert "No weighing-machine total" in flagged
 
-    clean = conversation.draft("weight", {"total": 8, "measured": 8, "flagged": [], "grades": ["22K", "18K"], "pledge_amount": 554539})
+    clean = conversation.draft("weight", {"total": 8, "measured": 8, "flagged": [], "grades": ["22K", "18K"], "max_loan_amount": 554539})
     assert "22K, 18K" in clean and "₹5,54,539" in clean
 
     damage = conversation.draft("damage", {"ai_enabled": True, "recorded": ["Gold Bangle"], "needs_review": 0,
-                                           "deduction": 8, "next_label": "pledge valuation"})
-    assert "<strong>8%</strong> damage deduction" in damage and "pledge valuation" in damage
+                                           "without_photo": 0, "next_label": "loan valuation"})
+    assert "Gold Bangle" in damage and "loan valuation" in damage
     assert conversation._inr(1234567) == "₹12,34,567" and conversation._inr(999) == "₹999"
 
 
@@ -205,13 +205,13 @@ def test_guidance_drafts_carry_the_next_action():
                                              "account_number": "GL2024001189", "ai_enabled": True})
     assert "GL2024001189" in renewal and "application" not in renewal.lower()
 
-    sanctioned = conversation.draft("report", {"report_id": "GLV-1", "recommendation": "PROCEED", "pledge_amount": 548730,
+    sanctioned = conversation.draft("report", {"report_id": "GLV-1", "recommendation": "PROCEED", "max_loan_amount": 548730,
                                                "account_number": "GLMUM000012", "application_no": "APP-2026-00042", "fresh": True})
     assert "GLMUM000012" in sanctioned and "APP-2026-00042" in sanctioned
     review = conversation.draft("report", {"report_id": "GLV-1", "recommendation": "REVIEW", "warnings": 2, "fresh": True})
     assert "REVIEW" in review and "No gold loan account is opened yet" in review
     assert "weighing-machine photo" in conversation.draft("continue", {"to": "weight"})
-    assert "pledge valuation" in conversation.draft("continue", {"to": "valuation"})
+    assert "loan valuation" in conversation.draft("continue", {"to": "valuation"})
 
 
 def test_guidance_skips_model_when_ai_off(fake_bedrock):

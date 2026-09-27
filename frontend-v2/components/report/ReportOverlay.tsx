@@ -1,21 +1,50 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useVerification } from "@/components/providers/VerificationProvider";
-import { reportPdfUrl } from "@/lib/api";
+import { reportPdfUrl, type SignaturePayload } from "@/lib/api";
 import Button from "@/components/ui/Button";
 import Icon from "@/components/ui/Icon";
 import { ease } from "@/lib/motion";
-import ReportDocument from "./ReportDocument";
+import ReportDocument, { type SignatureRole } from "./ReportDocument";
+import type { SignatureState } from "./SignaturePad";
 import ScaledPage from "./ScaledPage";
 
 /** Full-screen report viewer. Rendered as a direct child of <body> so print shows only the report. */
 export default function ReportOverlay({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { session } = useVerification();
+  const { session, submitReport, state } = useVerification();
   const [mounted, setMounted] = useState(false);
+  const [signatures, setSignatures] = useState<Partial<Record<SignatureRole, SignatureState>>>({});
   useEffect(() => setMounted(true), []);
+
+  // Signatures live for as long as the viewer is open; closing it starts again.
+  useEffect(() => {
+    if (!open) setSignatures({});
+  }, [open]);
+
+  const onSign = useCallback((role: SignatureRole, signature: SignatureState | null) => {
+    setSignatures((prev) => {
+      const next = { ...prev };
+      if (signature) next[role] = signature;
+      else delete next[role];
+      return next;
+    });
+  }, []);
+
+  const submitted = !!session?.report?.submitted_at;
+  const signedByCustomer = !!signatures.customer;
+  const submitting = state.busy === "mutate";
+
+  const submit = async () => {
+    const payload: SignaturePayload[] = (Object.keys(signatures) as SignatureRole[]).map((role) => ({
+      role,
+      name: signatures[role]!.name,
+      kind: signatures[role]!.kind,
+    }));
+    await submitReport(payload);
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -63,6 +92,22 @@ export default function ReportOverlay({ open, onClose }: { open: boolean; onClos
                   Print
                 </Button>
               </span>
+              {submitted ? (
+                <span className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-xl bg-ok-soft px-3 text-sm font-semibold text-ok">
+                  <Icon name="checkCircle" size={16} /> Submitted
+                </span>
+              ) : (
+                <Button
+                  variant="primary"
+                  icon="check"
+                  loading={submitting}
+                  disabled={!signedByCustomer || submitting}
+                  title={signedByCustomer ? undefined : "The customer signs before the verification can be submitted"}
+                  onClick={submit}
+                >
+                  Submit
+                </Button>
+              )}
               <a
                 href={reportPdfUrl(session.session_id)}
                 download={`${session.report.report_id}.pdf`}
@@ -88,7 +133,7 @@ export default function ReportOverlay({ open, onClose }: { open: boolean; onClos
           <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4 desk:px-6 desk:py-8">
             <motion.div initial={{ y: 24, opacity: 0 }} animate={{ y: 0, opacity: 1, transition: { duration: 0.45, ease } }} exit={{ y: 12, opacity: 0 }}>
               <ScaledPage>
-                <ReportDocument session={session} />
+                <ReportDocument session={session} onSign={onSign} />
               </ScaledPage>
             </motion.div>
           </div>

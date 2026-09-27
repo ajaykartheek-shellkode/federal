@@ -7,9 +7,9 @@ import Button from "@/components/ui/Button";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Segmented } from "@/components/ui/Controls";
 import Icon from "@/components/ui/Icon";
-import { cn, DAMAGE_DEDUCTION_META, formatINR } from "@/lib/format";
+import { cn, formatINR } from "@/lib/format";
 import { ease } from "@/lib/motion";
-import type { AppSettings, DamageDeduction, MaterialConfig, PurityGrade } from "@/lib/types";
+import type { AppSettings, MaterialConfig, PurityGrade } from "@/lib/types";
 
 const slug = (text: string) =>
   text
@@ -26,7 +26,7 @@ const shown = (issues: Record<string, string>, key: string, empty: boolean, show
 
 const inRange = (n: number, lo: number, hi: number, loExclusive = false) => Number.isFinite(n) && (loExclusive ? n > lo : n >= lo) && n <= hi;
 
-/** Field-level problems keyed like "m0.ltv", "m1.g2.rate", "weight_tolerance_g". Empty when valid. */
+/** Field-level problems keyed like "m0.name", "m1.g2.fineness", "weight_tolerance_g". Empty when valid. */
 export function valuationIssues(draft: AppSettings): Record<string, string> {
   const issues: Record<string, string> = {};
   const keys = new Set<string>();
@@ -36,7 +36,6 @@ export function valuationIssues(draft: AppSettings): Record<string, string> {
     if (!key) issues[`m${mi}.key`] = "Enter a CBS material code.";
     else if (keys.has(key)) issues[`m${mi}.key`] = "Material codes must be unique.";
     keys.add(key);
-    if (!inRange(m.ltv_pct, 0, 100)) issues[`m${mi}.ltv`] = "LTV must be 0–100%.";
     if (!m.grades.length) issues[`m${mi}.grades`] = "Add at least one purity grade.";
     const names = new Set<string>();
     m.grades.forEach((g, gi) => {
@@ -45,7 +44,6 @@ export function valuationIssues(draft: AppSettings): Record<string, string> {
       else if (names.has(name)) issues[`m${mi}.g${gi}.grade`] = "Grades must be unique.";
       names.add(name);
       if (!inRange(g.fineness_pct, 0, 100, true)) issues[`m${mi}.g${gi}.fineness`] = "Fineness must be above 0 and at most 100%.";
-      if (!inRange(g.rate_per_gram, 0, 1_000_000)) issues[`m${mi}.g${gi}.rate`] = "Rate must be 0–10,00,000.";
     });
   });
   if (!inRange(draft.weight_tolerance_g, 0, 5)) issues.weight_tolerance_g = "Tolerance must be 0–5 g.";
@@ -140,7 +138,7 @@ export function ValuationCard({
   const updateGrade = (gi: number, patch: Partial<PurityGrade>) => updateMaterial({ grades: material.grades.map((g, i) => (i === gi ? { ...g, ...patch } : g)) });
 
   const addMaterial = () => {
-    setMaterials([...materials, { key: "", name: "", ltv_pct: 70, grades: [{ grade: "", fineness_pct: NaN, rate_per_gram: NaN }], _new: true }]);
+    setMaterials([...materials, { key: "", name: "", ltv_pct: 70, grades: [{ grade: "", fineness_pct: NaN, rate_per_gram: 0 }], _new: true }]);
     setActive(materials.length);
   };
   const removeMaterial = () => {
@@ -159,7 +157,6 @@ export function ValuationCard({
         ...material.grades.flatMap((g, gi) => [
           see(`m${index}.g${gi}.grade`, g.grade) && issues[`m${index}.g${gi}.grade`],
           see(`m${index}.g${gi}.fineness`, g.fineness_pct) && issues[`m${index}.g${gi}.fineness`],
-          see(`m${index}.g${gi}.rate`, g.rate_per_gram) && issues[`m${index}.g${gi}.rate`],
         ]),
       ].find(Boolean)
     : undefined;
@@ -169,8 +166,8 @@ export function ValuationCard({
     <Card>
       <CardHeader
         icon="rupee"
-        title="Pledge valuation"
-        subtitle="Purity grades, rate per gram and loan-to-value for each material · applies to verifications started after saving"
+        title="Purity grades"
+        subtitle="The fineness each grade needs, per material · used to grade a Karatometer reading, not to price the loan"
         actions={
           <Button size="sm" variant="secondary" icon="plus" onClick={addMaterial} disabled={materials.length >= 10}>
             Add material
@@ -211,10 +208,6 @@ export function ValuationCard({
                   </span>
                   <TextCell label="CBS material code" value={material.key} mono disabled={!isNew} invalid={see(`m${index}.key`, material.key)} onChange={(key) => updateMaterial({ key })} />
                 </label>
-                <label className="block">
-                  <span className="mb-1 block text-2xs font-bold uppercase tracking-wider text-ink-muted">Loan-to-value</span>
-                  <NumberCell label="Loan-to-value %" value={material.ltv_pct} suffix="%" step={0.5} invalid={see(`m${index}.ltv`, material.ltv_pct)} onChange={(ltv_pct) => updateMaterial({ ltv_pct })} />
-                </label>
                 <div className="flex items-end">
                   <Button size="sm" variant="ghost" icon="trash" disabled={materials.length <= 1} onClick={removeMaterial} className="h-9 text-bad hover:bg-bad-soft hover:text-bad">
                     Remove
@@ -228,17 +221,12 @@ export function ValuationCard({
                     <tr className="border-b border-line bg-subtle text-left text-2xs font-bold uppercase tracking-wider text-ink-muted">
                       <th className="py-2 pl-3.5 pr-2">Purity grade</th>
                       <th className="py-2 pr-2">Fineness</th>
-                      <th className="py-2 pr-2">Rate per gram</th>
-                      <th className="py-2 pr-2 text-right" title="Pledge amount for 10 g at this grade, before any damage deduction">
-                        Pledge / 10 g
-                      </th>
                       <th className="w-10 py-2 pr-2" />
                     </tr>
                   </thead>
                   <tbody>
                     <AnimatePresence initial={false}>
                       {material.grades.map((g, gi) => {
-                        const example = 10 * (g.rate_per_gram || 0) * ((material.ltv_pct || 0) / 100);
                         return (
                           <motion.tr
                             key={gi}
@@ -254,10 +242,6 @@ export function ValuationCard({
                             <td className="w-[130px] py-1.5 pr-2">
                               <NumberCell label={`Fineness for ${g.grade || "grade"}`} value={g.fineness_pct} step={0.1} suffix="%" invalid={see(`m${index}.g${gi}.fineness`, g.fineness_pct)} onChange={(fineness_pct) => updateGrade(gi, { fineness_pct })} />
                             </td>
-                            <td className="w-[160px] py-1.5 pr-2">
-                              <NumberCell label={`Rate per gram for ${g.grade || "grade"}`} value={g.rate_per_gram} step={10} prefix="₹" invalid={see(`m${index}.g${gi}.rate`, g.rate_per_gram)} onChange={(rate_per_gram) => updateGrade(gi, { rate_per_gram })} />
-                            </td>
-                            <td className="whitespace-nowrap py-1.5 pr-2 text-right text-sm font-semibold tabular-nums text-ink-2">{formatINR(example)}</td>
                             <td className="py-1.5 pr-2 text-right">
                               <button
                                 type="button"
@@ -281,12 +265,12 @@ export function ValuationCard({
                     variant="ghost"
                     icon="plus"
                     disabled={material.grades.length >= 20}
-                    onClick={() => updateMaterial({ grades: [...material.grades, { grade: "", fineness_pct: NaN, rate_per_gram: NaN }] })}
+                    onClick={() => updateMaterial({ grades: [...material.grades, { grade: "", fineness_pct: NaN, rate_per_gram: 0 }] })}
                   >
                     Add grade
                   </Button>
                   <span className="flex items-center gap-1 text-2xs text-ink-muted">
-                    <Icon name="info" size={12} /> A CaratMeter reading takes the highest grade whose fineness it reaches (within the purity margin).
+                    <Icon name="info" size={12} /> A Karatometer reading takes the highest grade whose fineness it reaches (within the purity margin).
                   </span>
                 </div>
               </div>
@@ -304,11 +288,60 @@ export function ValuationCard({
   );
 }
 
-export function MeasurementCard({ draft, setDraft, issues }: { draft: AppSettings; setDraft: (next: AppSettings) => void; issues: Record<string, string> }) {
-  const example = 10;
+/** The loan amount: one rate per gram, and the wastage taken off the gross weight. */
+export function LoanAmountCard({ draft, setDraft }: { draft: AppSettings; setDraft: (next: AppSettings) => void }) {
+  const example = 100;
+  const net = example * (1 - (draft.wastage_pct || 0) / 100);
   return (
     <Card>
-      <CardHeader icon="weighScale" title="Weight, purity & damage rule" subtitle="How CaratMeter readings are compared with CBS and how CBS damage reduces the pledge" />
+      <CardHeader
+        icon="rupee"
+        title="Loan amount"
+        subtitle="Net weight (gross less wastage) × the rate per gram. Captured when a verification starts."
+      />
+      <div className="divide-y divide-line px-4 desk:px-5">
+        <div className="flex flex-wrap items-center justify-between gap-4 py-3.5">
+          <div className="min-w-0 max-w-[520px]">
+            <p className="text-sm font-semibold text-ink">Rate per gram</p>
+            <p className="text-xs text-ink-muted">Applied to the net weight of the whole pledge.</p>
+          </div>
+          <NumberCell
+            label="Rate per gram"
+            value={draft.rate_per_gram}
+            step={50}
+            prefix="₹"
+            className="w-[150px]"
+            onChange={(rate_per_gram) => setDraft({ ...draft, rate_per_gram })}
+          />
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-4 py-3.5">
+          <div className="min-w-0 max-w-[520px]">
+            <p className="text-sm font-semibold text-ink">Wastage</p>
+            <p className="text-xs text-ink-muted">Taken off the gross weight for solder, stones and impurities · allowed 0–25%.</p>
+          </div>
+          <NumberCell
+            label="Wastage"
+            value={draft.wastage_pct}
+            step={0.5}
+            suffix="%"
+            className="w-[130px]"
+            onChange={(wastage_pct) => setDraft({ ...draft, wastage_pct })}
+          />
+        </div>
+        <div className="py-3.5">
+          <Badge tone="brand">
+            100 g gross → {net.toFixed(2)} g net → {formatINR(net * (draft.rate_per_gram || 0))}
+          </Badge>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+export function MeasurementCard({ draft, setDraft, issues }: { draft: AppSettings; setDraft: (next: AppSettings) => void; issues: Record<string, string> }) {
+  return (
+    <Card>
+      <CardHeader icon="weighScale" title="Weight & purity tolerances" subtitle="How Karatometer readings are compared with the weights on the pledge list" />
       <div className="divide-y divide-line px-5">
         {[
           {
@@ -334,36 +367,6 @@ export function MeasurementCard({ draft, setDraft, issues }: { draft: AppSetting
             <NumberCell label={f.label} value={draft[f.key]} step={f.step} suffix={f.suffix} invalid={!!issues[f.key]} className="w-[130px]" onChange={(n) => setDraft({ ...draft, [f.key]: n })} />
           </div>
         ))}
-        <div className="py-4">
-          <p className="text-sm font-semibold text-ink">CBS damage deduction</p>
-          <p className="text-xs text-ink-muted">Applied to each item&apos;s pledge amount using the damage value recorded in CBS.</p>
-          <div className="mt-3 grid gap-3 md:grid-cols-3">
-            {(Object.keys(DAMAGE_DEDUCTION_META) as DamageDeduction[]).map((mode) => {
-              const active = draft.damage_deduction === mode;
-              const pct = mode === "tenths" ? example / 10 : mode === "percent" ? example : 0;
-              return (
-                <button
-                  key={mode}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => setDraft({ ...draft, damage_deduction: mode })}
-                  className={cn("rounded-xl border-2 p-3.5 text-left transition-colors", active ? "border-brand-500 bg-brand-50/60" : "border-line hover:border-brand-200")}
-                >
-                  <span className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-bold text-ink">{DAMAGE_DEDUCTION_META[mode].label}</span>
-                    <span className={cn("flex h-5 w-5 items-center justify-center rounded-full border-2", active ? "border-brand-600 bg-brand-600 text-white" : "border-line-strong")}>
-                      {active && <Icon name="check" size={12} strokeWidth={3} />}
-                    </span>
-                  </span>
-                  <span className="mt-1 block text-xs text-ink-muted">{DAMAGE_DEDUCTION_META[mode].hint}</span>
-                  <span className="mt-2 block">
-                    <Badge tone={active ? "brand" : "neutral"}>₹1,00,000 → {formatINR(100000 * (1 - pct / 100))}</Badge>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
       </div>
     </Card>
   );

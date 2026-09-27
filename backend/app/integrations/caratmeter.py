@@ -1,4 +1,4 @@
-"""CaratMeter integration — the branch XRF analyser, reached over HTTP.
+"""Karatometer integration — the branch XRF analyser, reached over HTTP.
 
 One request per loan application, carrying the ornament ids this verification created; the
 response returns a reading for every one of them:
@@ -33,7 +33,7 @@ from app import config
 
 logger = logging.getLogger("glportal.caratmeter")
 
-MODEL = "CaratMeter XRF-900"
+MODEL = "Karatometer XRF-900"
 FIRMWARE = "4.2.1"
 
 # Simulated analyser latency (a real XRF reading takes a moment per sample). Tests set these to 0.
@@ -67,7 +67,7 @@ def _now() -> str:
 
 
 def device_id_for(branch: str) -> str:
-    return f"CM-{(branch or 'BRANCH').upper()}"
+    return f"KM-{(branch or 'BRANCH').upper()}"
 
 
 def simulated_status(branch: str) -> dict:
@@ -156,10 +156,10 @@ async def measure(branch: str, application: str, inventory: List[dict], customer
             res.raise_for_status()
             payload = res.json()
     except Exception as exc:  # noqa: BLE001
-        logger.warning("CaratMeter gateway call failed: %s", exc)
-        raise CaratMeterError("The CaratMeter didn't respond. Check the device connection and try again.") from exc
+        logger.warning("Karatometer gateway call failed: %s", exc)
+        raise CaratMeterError("The Karatometer didn't respond. Check the device connection and try again.") from exc
     if not isinstance(payload, dict) or not isinstance(payload.get("measurements"), list):
-        raise CaratMeterError("The CaratMeter returned an unexpected response.")
+        raise CaratMeterError("The Karatometer returned an unexpected response.")
     return payload
 
 
@@ -176,7 +176,7 @@ async def status(branch: str) -> dict:
             res.raise_for_status()
             return {**res.json(), "mode": "http"}
     except Exception as exc:  # noqa: BLE001
-        raise CaratMeterError("The CaratMeter device is not reachable.") from exc
+        raise CaratMeterError("The Karatometer device is not reachable.") from exc
 
 
 def gateway_mode() -> str:

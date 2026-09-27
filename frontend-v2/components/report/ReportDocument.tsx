@@ -4,9 +4,9 @@ import type { ReactNode } from "react";
 import { FederalWordmark } from "@/components/shell/Brand";
 import ShellkodeLogo from "@/components/shell/ShellkodeLogo";
 import { assetUrl } from "@/lib/api";
-import { CHECK_LABELS, cn, DAMAGE_DEDUCTION_META, formatDateTime, formatINR, formatWeight, formatWeightDelta, ITEM_META, MEASURE_META, purityLabel, RESULT_META } from "@/lib/format";
+import { CHECK_LABELS, cn, formatDateTime, formatINR, formatNumber, formatWeight, formatWeightDelta, ITEM_META, MEASURE_META, purityLabel, RESULT_META } from "@/lib/format";
 import type { ResultStatus, SessionView } from "@/lib/types";
-import SignaturePad from "./SignaturePad";
+import SignaturePad, { type SignatureState } from "./SignaturePad";
 
 const PILL: Record<string, string> = {
   ok: "bg-[#E6F5EE] text-[#0E9258]",
@@ -51,7 +51,16 @@ function KV({ k, v, mono }: { k: string; v: ReactNode; mono?: boolean }) {
 const th = "border-b border-[#E3E8F0] px-2 py-1.5 text-left text-[9.5px] font-bold uppercase tracking-wider text-[#58647A]";
 const td = "border-b border-[#F0F3F8] px-2 py-1.5 align-middle text-[11.5px] text-[#15223A]";
 
-export default function ReportDocument({ session }: { session: SessionView }) {
+export type SignatureRole = "customer" | "assessor" | "officer";
+
+export default function ReportDocument({
+  session,
+  onSign,
+}: {
+  session: SessionView;
+  /** Lifts each signature to the viewer, which submits once the customer has signed. */
+  onSign?: (role: SignatureRole, signature: SignatureState | null) => void;
+}) {
   const report = session.report!;
   const { loan, stats } = session;
   const proceed = report.recommendation === "PROCEED";
@@ -60,7 +69,7 @@ export default function ReportDocument({ session }: { session: SessionView }) {
   // Prefer what was frozen into the report; fall back to the live session view.
   const valuation = report.valuation ?? session.valuation;
   const weight = report.weight ?? (session.steps?.includes("weight") ? session.weight : null);
-  const pledge = valuation?.totals.pledge_amount ?? stats.pledge_amount;
+  const maxLoan = valuation?.totals.max_loan_amount ?? stats.max_loan_amount ?? stats.pledge_amount;
   let sectionNo = 0;
   const next = () => ++sectionNo;
 
@@ -97,7 +106,7 @@ export default function ReportDocument({ session }: { session: SessionView }) {
             [String(stats.items), "Items"],
             [formatWeight(stats.total_weight), "Total weight"],
             [`${stats.measured}/${stats.items}`, "Assayed"],
-            [formatINR(pledge), valuation?.totals.is_estimate ? "Pledge (est.)" : "Pledge amount"],
+            [formatINR(maxLoan), "Max loan amount"],
           ].map(([v, l]) => (
             <div key={l}>
               <p className="text-[18px] font-bold text-[#15223A]">{v}</p>
@@ -134,7 +143,7 @@ export default function ReportDocument({ session }: { session: SessionView }) {
           ) : (
             <KV k="AI validation" v={session.ai_enabled ? "Enabled" : "Disabled (manual)"} />
           )}
-          <KV k="Pledge amount" v={`${formatINR(pledge)}${valuation?.totals.is_estimate ? " (provisional)" : ""}`} />
+          <KV k="Max loan amount" v={formatINR(maxLoan)} />
           <KV k="Mode" v={session.settings.blocker_mode ? "Blocker" : "Alert"} />
           {loan.application_no && <KV k="AI validation" v={session.ai_enabled ? "Enabled" : "Disabled (manual)"} />}
         </div>
@@ -203,7 +212,7 @@ export default function ReportDocument({ session }: { session: SessionView }) {
                     {dmg ? (
                       <span className="flex items-center gap-1.5">
                         <Result status={dmg.status} overridden={dmg.overridden} />
-                        {dmg.damage_percent > 0 && <span className="text-[10px] text-[#58647A]">−{dmg.damage_percent}%</span>}
+                        {!dmg.asset_id && <span className="text-[10px] text-[#58647A]">no photo</span>}
                       </span>
                     ) : (
                       "—"
@@ -217,12 +226,12 @@ export default function ReportDocument({ session }: { session: SessionView }) {
       </Section>
 
       {weight && valuation && (
-        <Section n={next()} title="Weight, purity & pledge valuation">
+        <Section n={next()} title="Weight, purity & loan valuation">
           <div className="mb-3 grid grid-cols-3 gap-3">
             {[
               ["Entered per item", formatWeight(weight.entered_g), `${stats.items} ornaments`],
               ["Weighing machine", weight.scale_g !== null ? formatWeight(weight.scale_g) : "Not captured", weight.scale_source === "photo" ? "Read from the machine photo" : weight.scale_source === "assessor" ? "Entered by assessor" : "—"],
-              ["CaratMeter", weight.measured_g !== null ? formatWeight(weight.measured_g) : "Not assayed", weight.device?.device_id ? `${weight.device.model ?? "CaratMeter"} · ${weight.device.device_id}` : "—"],
+              ["Karatometer", weight.measured_g !== null ? formatWeight(weight.measured_g) : "Not assayed", weight.device?.device_id ? `${weight.device.model ?? "Karatometer"} · ${weight.device.device_id}` : "—"],
             ].map(([k, v, sub]) => (
               <div key={k} className="rounded-lg border border-[#E3E8F0] px-3 py-2">
                 <p className="text-[9.5px] font-bold uppercase tracking-wider text-[#58647A]">{k}</p>
@@ -246,13 +255,11 @@ export default function ReportDocument({ session }: { session: SessionView }) {
             <thead>
               <tr>
                 <th className={th}>Ornament</th>
-                <th className={th}>Weight</th>
-                <th className={th}>CaratMeter assay</th>
+                <th className={cn(th, "text-right")}>Gross weight</th>
+                <th className={cn(th, "text-right")}>Net weight</th>
+                <th className={th}>Purity</th>
                 <th className={th}>Δ wt</th>
                 <th className={th}>Reading</th>
-                <th className={cn(th, "text-right")}>Rate/g</th>
-                <th className={cn(th, "text-right")}>LTV</th>
-                <th className={cn(th, "text-right")}>Pledge</th>
               </tr>
             </thead>
             <tbody>
@@ -263,17 +270,13 @@ export default function ReportDocument({ session }: { session: SessionView }) {
                 return (
                   <tr key={it.id}>
                     <td className={cn(td, "font-semibold")}>{it.name}</td>
-                    <td className={td}>
-                      {purityLabel(it)} · {formatWeight(it.weight_gm)}
-                    </td>
-                    <td className={td}>{m ? `${m.grade ?? "Ungraded"} (${m.fineness_pct.toFixed(2)}%) · ${formatWeight(m.weight_g)}` : "—"}</td>
+                    <td className={cn(td, "text-right")}>{formatWeight(it.weight_gm)}</td>
+                    <td className={cn(td, "text-right font-semibold")}>{v ? formatWeight(v.net_weight_g) : "—"}</td>
+                    <td className={td}>{m ? `${m.grade ?? "Ungraded"} (${m.fineness_pct.toFixed(2)}%)` : purityLabel(it)}</td>
                     <td className={cn(td, "whitespace-nowrap")}>{m ? formatWeightDelta(m.weight_g - it.weight_gm) : "—"}</td>
                     <td className={td}>
                       {it.measurement_overridden ? <Pill tone="brand">Accepted</Pill> : <Pill tone={MEASURE_META[status].tone}>{MEASURE_META[status].label}</Pill>}
                     </td>
-                    <td className={cn(td, "text-right")}>{v ? formatINR(v.rate_per_gram) : "—"}</td>
-                    <td className={cn(td, "text-right")}>{v ? `${v.ltv_pct}%` : "—"}</td>
-                    <td className={cn(td, "text-right font-semibold")}>{v ? formatINR(v.pledge_amount) : "—"}</td>
                   </tr>
                 );
               })}
@@ -281,13 +284,14 @@ export default function ReportDocument({ session }: { session: SessionView }) {
           </table>
           <div className="report-avoid-break mt-2.5 flex items-end justify-between gap-6">
             <p className="max-w-[95mm] text-[10px] leading-snug text-[#58647A]">
-              Valued on each ornament&apos;s weight at the rate for the purity the CaratMeter assayed × LTV, less the damage deduction ({DAMAGE_DEDUCTION_META[valuation.damage_deduction_mode].hint}).{valuation.totals.is_estimate ? " Some ornaments are not assayed yet, so the total is provisional." : ""} Rates as configured when the verification started. Indicative — not a sanction.
+              The maximum loan is the net weight — gross weight less {formatNumber(valuation.totals.wastage_pct)}% wastage — at {formatINR(valuation.totals.rate_per_gram)} per gram, as configured when this verification started.{valuation.totals.is_estimate ? " Some ornaments are not assayed yet, so the purity column is provisional." : ""} Indicative — not a sanction.
             </p>
             <div className="min-w-[64mm] text-[11.5px]">
               {[
-                ["Gross value", formatINR(valuation.totals.gross_value)],
-                ["Less LTV margin", `−${formatINR(Math.max(0, valuation.totals.gross_value - valuation.totals.pledge_amount - valuation.totals.damage_deduction))}`],
-                ["Less damage deduction", `−${formatINR(valuation.totals.damage_deduction)}`],
+                ["Gross weight", formatWeight(valuation.totals.gross_weight_g)],
+                [`Less wastage (${formatNumber(valuation.totals.wastage_pct)}%)`, `−${formatWeight(valuation.totals.wastage_g)}`],
+                ["Net weight", formatWeight(valuation.totals.net_weight_g)],
+                ["Rate per gram", formatINR(valuation.totals.rate_per_gram)],
               ].map(([k, v]) => (
                 <div key={k} className="flex justify-between gap-4">
                   <span className="text-[#58647A]">{k}</span>
@@ -295,8 +299,8 @@ export default function ReportDocument({ session }: { session: SessionView }) {
                 </div>
               ))}
               <div className="mt-1 flex justify-between gap-4 border-t border-[#E3E8F0] pt-1 text-[13px] font-bold text-[#004E96]">
-                <span>Pledge amount</span>
-                <span>{formatINR(valuation.totals.pledge_amount)}</span>
+                <span>Max loan amount</span>
+                <span>{formatINR(valuation.totals.max_loan_amount)}</span>
               </div>
             </div>
           </div>
@@ -396,13 +400,30 @@ export default function ReportDocument({ session }: { session: SessionView }) {
       <section className="report-avoid-break mt-7">
         <h3 className="mb-2 text-[12px] font-bold uppercase tracking-wider text-[#004E96]">Declaration & authorisation</h3>
         <p className="mb-3 text-[11px] leading-relaxed">
-          I confirm that the collateral and documents recorded above were verified in my presence. AI validation is advisory; the final
-          assessment and this authorisation are made by the branch officials named below.
+          The customer confirms that the ornaments listed above are pledged by them and that the weights and purity recorded are as
+          assessed in their presence. AI validation is advisory; the final assessment and this authorisation are made by the branch
+          officials named below.
         </p>
-        <div className="flex gap-4">
-          <SignaturePad role="Branch assessor" detail={`Branch ${loan.branch || "—"}`} />
-          <SignaturePad role="Authorising officer" detail={`Account ${loan.account_number}`} />
+        <div className="flex flex-wrap gap-4">
+          <SignaturePad
+            role="Customer"
+            name={loan.customer_name}
+            detail={loan.customer_name}
+            onChange={(s) => onSign?.("customer", s)}
+          />
+          <SignaturePad role="Branch assessor" detail={`Branch ${loan.branch || "—"}`} onChange={(s) => onSign?.("assessor", s)} />
+          <SignaturePad
+            role="Authorising officer"
+            detail={loan.account_number ? `Account ${loan.account_number}` : `Application ${loan.application_no}`}
+            onChange={(s) => onSign?.("officer", s)}
+          />
         </div>
+        {report.submitted_at && (
+          <p className="mt-3 flex items-center gap-2 rounded-lg bg-[#E6F5EE] px-3 py-2 text-[11px] font-semibold text-[#0E9258]">
+            Submitted {formatDateTime(report.submitted_at)}
+            {report.signatures?.length ? ` · signed by ${report.signatures.map((s) => s.role).join(", ")}` : ""}
+          </p>
+        )}
       </section>
 
       <footer className="mt-8 flex items-center justify-between border-t border-[#E3E8F0] pt-3 text-[9.5px] text-[#7C879A]">

@@ -43,7 +43,7 @@ export function OverrideDialog({ open, target, refId, onClose }: { open: boolean
     if (d) {
       title = "Accept damage finding";
       context = (
-        <Context thumb={d.thumb_asset_id} name={d.item} meta={`${d.type} · ${d.severity} · ${d.damage_percent}%`}>
+        <Context thumb={d.thumb_asset_id} name={d.item} meta={`${d.type} · ${d.severity}${d.asset_id ? "" : " · no photo"}`}>
           <ResultBadge status={d.status} />
           {d.notes && <span className="text-xs text-ink-muted">{d.notes}</span>}
         </Context>
@@ -52,7 +52,7 @@ export function OverrideDialog({ open, target, refId, onClose }: { open: boolean
   } else if (target === "measurement") {
     const item = session.inventory.find((i) => i.id === refId);
     const m = item?.measurement;
-    title = "Accept CaratMeter reading";
+    title = "Accept Karatometer reading";
     context = item && (
       <Context thumb={item.thumb_asset_id} name={item.name} meta={`Entered ${formatWeight(item.weight_gm)}`}>
         <span className="text-xs font-semibold text-warn">{MEASURE_META[item.measurement_status ?? "pending"].label}</span>

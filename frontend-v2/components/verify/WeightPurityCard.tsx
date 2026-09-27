@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import { Card, CardHeader } from "@/components/ui/Card";
 import Icon, { type IconName } from "@/components/ui/Icon";
-import { cn, formatTime, formatWeight, plural } from "@/lib/format";
+import { cn, formatNumber, formatTime, formatWeight, plural } from "@/lib/format";
 import { ease } from "@/lib/motion";
 import type { SessionView } from "@/lib/types";
 
@@ -52,7 +52,7 @@ function Reconciliation({ session }: { session: SessionView }) {
   const settled = w.scale_status === "match" || w.scale_overridden;
   const apportioned = session.inventory.some((r) => r.weight_source === "ai");
 
-  let machineCaption: ReactNode = "Upload the machine photo — I'll split the total across the ornaments";
+  let machineCaption: ReactNode = "Upload the weighing-machine photo to read it";
   if (w.scale_source === "photo") {
     machineCaption = (
       <>
@@ -63,31 +63,20 @@ function Reconciliation({ session }: { session: SessionView }) {
   } else if (w.scale_source === "assessor") {
     machineCaption = "Entered by the assessor";
   } else if (session.scale) {
-    machineCaption = session.ai_enabled ? "Display not readable in the photo" : "Type the total from the display";
+    machineCaption = session.ai_enabled ? "Display not readable — type the total" : "Type the total from the display";
+  } else if (w.entered_g > 0) {
+    machineCaption = `From the ${plural(session.stats.items, "ornament")} on the list`;
   }
 
   return (
     <div className="space-y-2.5">
       <div className="grid gap-2.5 sm:grid-cols-3">
         <Tile
-          icon="gem"
-          label="Per ornament"
-          value={formatWeight(w.entered_g)}
-          caption={
-            w.unweighed.length
-              ? `${w.unweighed.length} still to weigh · ${w.unweighed.slice(0, 2).join(", ")}`
-              : apportioned
-                ? `Split across ${plural(session.stats.items, "ornament")} — correct any on the pledge list`
-                : `${plural(session.stats.items, "ornament")} weighed at the counter`
-          }
-          tone={w.unweighed.length ? "warn" : "ok"}
-        />
-        <Tile
           icon="weighScale"
-          label="Weighing machine"
-          value={w.scale_g !== null ? formatWeight(w.scale_g) : <span className="text-ink-faint">—</span>}
+          label="Gross weight"
+          value={w.gross_g > 0 ? formatWeight(w.gross_g) : <span className="text-ink-faint">—</span>}
           caption={machineCaption}
-          tone={w.scale_status === "match" ? "ok" : w.scale_status === "mismatch" && !w.scale_overridden ? "warn" : "neutral"}
+          tone={w.gross_g > 0 ? "ok" : "neutral"}
           action={
             !locked ? (
               <button
@@ -101,15 +90,17 @@ function Reconciliation({ session }: { session: SessionView }) {
           }
         />
         <Tile
-          icon="cpu"
-          label="CaratMeter"
-          value={w.measured_g !== null ? formatWeight(w.measured_g) : <span className="text-ink-faint">—</span>}
-          caption={
-            session.measurements
-              ? `${session.measurements.count} of ${plural(session.inventory.length, "ornament")} assayed · ${formatTime(session.measurements.measured_at)}`
-              : "Awaiting the assay"
-          }
-          tone={session.measurements ? (w.flagged ? "warn" : "ok") : "neutral"}
+          icon="gem"
+          label="Wastage"
+          value={w.gross_g > 0 ? formatWeight(w.wastage_g) : <span className="text-ink-faint">—</span>}
+          caption={`${formatNumber(w.wastage_pct)}% of the gross weight`}
+        />
+        <Tile
+          icon="rupee"
+          label="Net weight"
+          value={w.gross_g > 0 ? formatWeight(w.net_g) : <span className="text-ink-faint">—</span>}
+          caption="Gross weight less wastage — the loan is sized on this"
+          tone={w.gross_g > 0 ? "ok" : "neutral"}
         />
       </div>
 
@@ -172,7 +163,7 @@ function MeasurePrompt({ session }: { session: SessionView }) {
           <p className="text-sm font-semibold text-ink-2">Next: the weighing machine</p>
           <p className="text-xs text-ink-muted">
             Once the collateral photo has listed the ornaments, put them all on the machine and upload the photo — I read the
-            total and give each ornament its weight, then the CaratMeter assays them.
+            total and give each ornament its weight, then the Karatometer assays them.
           </p>
         </div>
       </div>
@@ -193,7 +184,7 @@ function MeasurePrompt({ session }: { session: SessionView }) {
       <div className="min-w-0 flex-1">
         <p className="text-sm font-bold text-ink">
           {ready
-            ? "Ask the CaratMeter for the purity"
+            ? "Ask the Karatometer for the purity"
             : session.scale
               ? `Weigh the remaining ${w.unweighed.length} ornament${w.unweighed.length === 1 ? "" : "s"} first`
               : "Upload the weighing-machine photo first"}

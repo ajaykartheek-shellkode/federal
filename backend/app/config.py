@@ -75,7 +75,7 @@ MAX_DOCUMENTS_PER_UPLOAD: int = 3
 # Upper bound for the short conversational messages so a slow model never stalls a step.
 GUIDANCE_TIMEOUT_S: float = float(os.environ.get("GUIDANCE_TIMEOUT_S", "8"))
 
-# --------------------------------------------------------------------------- CaratMeter
+# --------------------------------------------------------------------------- Karatometer
 # "mock" simulates the branch XRF karat analyser in-process (same JSON contract as the device
 # gateway). "http" calls a real gateway at CARATMETER_BASE_URL.
 CARATMETER_MODE: str = os.environ.get("CARATMETER_MODE", "mock").lower()

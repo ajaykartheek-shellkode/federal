@@ -34,6 +34,8 @@ _MIGRATIONS = [
     "ALTER TABLE settings ADD COLUMN IF NOT EXISTS purity_tolerance_pct DOUBLE PRECISION NOT NULL DEFAULT 0.5",
     "ALTER TABLE settings ADD COLUMN IF NOT EXISTS damage_deduction VARCHAR(16) NOT NULL DEFAULT 'tenths'",
     "ALTER TABLE customers ADD COLUMN IF NOT EXISTS mobile VARCHAR(24) NOT NULL DEFAULT ''",
+    "ALTER TABLE settings ADD COLUMN IF NOT EXISTS rate_per_gram DOUBLE PRECISION NOT NULL DEFAULT 8500",
+    "ALTER TABLE settings ADD COLUMN IF NOT EXISTS wastage_pct DOUBLE PRECISION NOT NULL DEFAULT 3.0",
     "CREATE INDEX IF NOT EXISTS ix_customers_mobile ON customers (mobile)",
     "CREATE INDEX IF NOT EXISTS ix_customers_customer_id ON customers (customer_id)",
 ]

@@ -76,7 +76,7 @@ export default function SessionHeader({ session }: { session: SessionView }) {
           <AnimatedNumber value={stats.total_weight} format={(n) => formatNumber(n)} />
           <span className="ml-1 text-sm font-semibold text-white/55">g</span>
         </Kpi>
-        <Kpi icon="cpu" label="Assayed" hint="Ornaments the CaratMeter has returned a purity for">
+        <Kpi icon="cpu" label="Assayed" hint="Ornaments the Karatometer has returned a purity for">
           <AnimatedNumber value={stats.measured} />
           <span className="text-sm font-semibold text-white/55">/{stats.items}</span>
         </Kpi>
@@ -86,7 +86,7 @@ export default function SessionHeader({ session }: { session: SessionView }) {
         {showPledge && (
         <Kpi
           icon="rupee"
-          label={stats.pledge_is_estimate ? "Pledge · provisional" : "Pledge amount"}
+          label="Max loan amount"
           highlight
           hint={
             stats.pledge_is_estimate
@@ -94,7 +94,7 @@ export default function SessionHeader({ session }: { session: SessionView }) {
               : "Weight × rate for the assayed purity × LTV, less the damage deduction. Not a sanction amount."
           }
         >
-          <AnimatedNumber value={stats.pledge_amount} format={(n) => formatINR(n)} />
+          <AnimatedNumber value={stats.max_loan_amount} format={(n) => formatINR(n)} />
         </Kpi>
         )}
       </div>

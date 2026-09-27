@@ -1,7 +1,7 @@
-# GL Portal — Federal Bank gold loan collateral verification (frontend)
+# GL Portal — Federal Bank gold loan originating system (frontend)
 
-An AI-guided app that walks a branch assessor through gold-loan collateral verification, built to
-the ShellKode TDD v3.0 and styled in the Federal Bank identity. `/login` is the way in; everything
+An AI-guided app that walks a branch assessor through originating a gold loan — collateral to
+maximum loan amount — built to the ShellKode TDD v3.0 and styled in the Federal Bank identity. `/login` is the way in; everything
 else is behind the sign-in guard.
 
 It runs the same journey on two shapes of screen, from one codebase:
@@ -41,26 +41,31 @@ npm run typecheck && npm run lint && npm run build
 1. **Customer** — enter the customer's **mobile number** (chat or welcome screen; the welcome screen
    also lists the CBS customers as chips). Only the customer and KYC (masked) load from CBS; nothing
    is pledged yet.
-2. **Collateral photos** — lay the ornaments out on a plain surface and upload or webcam-capture up to
+2. **Collateral photos** — lay the ornaments out on a plain surface and upload or capture up to
    3 photos per upload. The Collateral Validator checks the capture and **lists every ornament it can
    see**, cropping a thumbnail for each; that list *is* the pledged inventory. Rename, add or remove
-   rows as needed — a re-capture replaces the list until weighing starts.
+   rows as needed — a re-capture replaces the list until weighing starts. A capture you are re-taking
+   can be **removed**, and the ornaments only it produced go with it (anything already weighed stays).
 3. **Weight & purity** — upload the **weighing-machine photo** with everything on the pan. The agent
-   reads the total off the display *and splits it across the pledge list*, so every ornament arrives
-   with a weight and a one-phrase reason ("thick curb chain, heaviest chain"); the shares always add
-   up to the display total. Each is marked **AI** until the assessor confirms it — correcting one in
-   the table needs no justification, changing it again does. Then fetch the purity: one CaratMeter
-   request for the loan application returns an assay per ornament, graded against the valuation table
-   and cross-checked against each ornament's weight. Findings can be re-assayed or accepted with a
-   justification. The **Pledge valuation** card shows the amount per ornament and in total (gross
-   value → LTV margin → damage deduction → pledge).
-4. **Damage** — one close-up per damaged ornament with its **damage percentage**, which reduces that
-   item's pledge amount. The Damage Detector compares the recorded damage with the photo and rates
-   severity; items are analysed in parallel.
+   reads the **gross weight** off the display *and splits it across the pledge list*, so every ornament
+   arrives with a weight; the shares always add up to the display total. Each is marked **AI** until
+   the assessor confirms it — correcting one in the table needs no justification, changing it again
+   does. The three tiles are **Gross weight → Wastage (a fixed %) → Net weight**. Then fetch the
+   purity: one **Karatometer** request for the loan application returns an assay per ornament, graded
+   and cross-checked against that ornament's weight. Findings can be re-assayed or accepted with a
+   justification.
+4. **Damage** — the damaged ornament, the type and the severity; a close-up is **optional**, and one
+   recorded without a photo is still carried into the report. The Damage Detector compares the
+   recorded damage with any photo and rates severity; items are analysed in parallel. Damage is
+   documented for the approving officer and never reduces the loan amount.
 5. **Documents** — ID proof (image or multi-page PDF) with its type. The Document Verifier checks
    legibility/completeness and cross-verifies name, ID number and address against CBS.
-6. **Report** — PROCEED / REVIEW recommendation with reasons, weight & pledge valuation, audit trail
-   and e-signatures. **Download PDF** saves the server-generated A4 file; **Print** uses the browser
+5b. **Loan valuation** — its own step: gross weight → less wastage → net weight → × the rate per gram
+   → **Max loan amount**.
+6. **Report** — PROCEED / REVIEW recommendation with reasons, weight & loan valuation, audit trail and
+   e-signatures from the **customer**, the branch assessor and the authorising officer. Once the
+   customer has signed, **Submit** records the signatures and marks the verification submitted.
+   **Download PDF** saves the server-generated A4 file; **Print** uses the browser
    (`/report/<sessionId>` is the shareable printable page).
 
 Every step streams its real processing steps into the chat ("Agent executing"). In **alert mode**
@@ -70,7 +75,7 @@ manual verification without calling the model.
 
 Other views: **Reports** (7-day outcomes, by date, by loan account — with thumbnails and failure
 reasons), **History** (reopen any past verification), **Settings** (AI per scenario, enforcement
-mode, thresholds, pledge valuation per material, weight/purity tolerances and the damage rule).
+mode, thresholds, the loan rate and wastage, purity grades per material and weight/purity tolerances).
 
 Deep links: `/?session=<id>` reopens a verification, `/?view=reports|history|settings` opens a view.
 

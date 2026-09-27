@@ -11,7 +11,7 @@ import Spinner from "@/components/ui/Spinner";
 import { ApiError, fetchSettings, saveSettings } from "@/lib/api";
 import { cn } from "@/lib/format";
 import type { AppSettings } from "@/lib/types";
-import { MeasurementCard, ValuationCard, valuationIssues } from "./ValuationSettings";
+import { LoanAmountCard, MeasurementCard, ValuationCard, valuationIssues } from "./ValuationSettings";
 
 type NumericKey = "max_ornaments_per_image" | "foreign_object_threshold_pct" | "doc_match_threshold_pct";
 
@@ -199,6 +199,7 @@ export default function SettingsView() {
           </div>
         </Card>
 
+        <LoanAmountCard draft={draft} setDraft={setDraft} />
         <ValuationCard draft={draft} setDraft={setDraft} issues={issues} showAll={attempted} />
         <MeasurementCard draft={draft} setDraft={setDraft} issues={issues} />
       </div>

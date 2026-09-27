@@ -201,7 +201,7 @@ def test_damage_record_must_be_cleared_before_removing_an_item(listed):
     S.record_damage(listed, {"ornament_id": "item-2", "item": "Gold Bangle", "status": "pass", "damage_percent": 8})
     with pytest.raises(S.WorkflowError, match="damage record"):
         S.remove_item(listed, "item-2")
-    assert S.find_item(listed, "item-2")["damage_percent"] == 8
+    assert S.find_item(listed, "item-2")["damaged"] is True
 
 
 # --------------------------------------------------------------------------- weight & purity
@@ -214,7 +214,7 @@ def test_weight_gate_wants_every_weight_then_the_readings(listed):
 
     weigh_all(listed)
     g = S.gate(listed, False)
-    assert not g["allowed"] and "CaratMeter" in g["reasons"][0]
+    assert not g["allowed"] and "Karatometer" in g["reasons"][0]
     S.record_measurements(listed, readings(listed))
     assert S.gate(listed, False)["allowed"]  # alert mode: the machine photo is advisory
     g = S.gate(listed, True)
@@ -236,12 +236,12 @@ def test_readings_set_the_purity_and_flag_disagreements(listed):
     assert listed["measurements"]["count"] == 3
 
     texts = " | ".join(r["text"] for r in S.review_reasons(listed))
-    assert "CaratMeter weighed 10.2 g against 11 g entered" in texts
+    assert "Karatometer weighed 10.2 g against 11 g entered" in texts
     assert "below every configured silver grade" in texts
 
     assert S.gate(listed, False)["allowed"] is True
     g = S.gate(listed, True)
-    assert not g["allowed"] and "2 CaratMeter reading(s) need review" in g["reasons"][0]
+    assert not g["allowed"] and "2 Karatometer reading(s) need review" in g["reasons"][0]
     S.apply_override(listed, "measurement", "item-2", "Re-weighed, clasp was removed")
     S.apply_override(listed, "measurement", "item-3", "Assayed again by the appraiser")
     assert S.weight_complete(listed)
@@ -314,27 +314,46 @@ def ready(st, scale_g=33.05):
     return st
 
 
-def test_pledge_uses_the_entered_weight_and_assessed_purity(listed):
+def test_loan_amount_follows_gross_wastage_and_net_weight(listed):
     ready(listed)
-    items = {i["ornament_id"]: i for i in S.valuation_view(listed)["items"]}
+    view = S.valuation_view(listed)
+    items = {i["ornament_id"]: i for i in view["items"]}
     chain = items["item-1"]
-    assert (chain["weight_g"], chain["weight_basis"], chain["grade"]) == (10.0, "entered", "22K")
-    assert chain["rate_per_gram"] == 8500 and chain["pledge_amount"] == round(10 * 8500 * 0.75)
+    # Each ornament carries its own gross weight and the net left after wastage.
+    assert (chain["gross_weight_g"], chain["grade"]) == (10.0, "22K")
+    assert chain["net_weight_g"] == 9.7 and chain["wastage_g"] == 0.3
     assert items["item-3"]["material"] == "Silver" and items["item-3"]["grade"] == "999"
+
+    totals = view["totals"]
+    assert totals["gross_weight_g"] == 33.0 and totals["wastage_pct"] == 3.0
+    assert totals["wastage_g"] == 0.99 and totals["net_weight_g"] == 32.01
+    assert totals["rate_per_gram"] == 8500
+    assert totals["max_loan_amount"] == round(32.01 * 8500)
+    assert totals["pledge_amount"] == totals["max_loan_amount"]  # the historical key, for Reports
+
     stats = S.inventory_stats(listed)
+    assert stats["max_loan_amount"] == totals["max_loan_amount"]
+    assert stats["gross_weight"] == 33.0 and stats["net_weight"] == 32.01
     assert stats["pledge_is_estimate"] is False and stats["weighed"] == 3
     assert stats["total_weight"] == 33.0 and stats["measured_weight"] == 33.0
 
 
-def test_damage_percent_reduces_the_pledge(listed):
+def test_the_wastage_percentage_and_rate_come_from_the_session(listed):
     ready(listed)
-    before = S.inventory_stats(listed)["pledge_amount"]
-    S.record_damage(listed, {"ornament_id": "item-1", "item": "Gold Chain", "status": "pass", "damage_percent": 10})
-    after = S.valuation_view(listed)
-    chain = next(i for i in after["items"] if i["ornament_id"] == "item-1")
-    # Default rule: the damage value is tenths of a percent, so 10 → 1 % off this item.
-    assert chain["damage_percent"] == 10 and chain["damage_deduction"] == round(10 * 8500 * 0.75 * 0.01)
-    assert after["totals"]["pledge_amount"] < before
+    listed["valuation"] = {**S.valuation_of(listed), "wastage_pct": 10, "rate_per_gram": 1000}
+    totals = S.valuation_view(listed)["totals"]
+    assert totals["net_weight_g"] == 29.7 and totals["max_loan_amount"] == 29700
+
+
+def test_damage_is_documented_not_priced(listed):
+    ready(listed)
+    before = S.inventory_stats(listed)["max_loan_amount"]
+    S.record_damage(listed, {"ornament_id": "item-1", "item": "Gold Chain", "type": "Dent",
+                             "severity": "moderate", "status": "pass"})
+    assert S.find_item(listed, "item-1")["damaged"] is True
+    assert len(listed["damages"]) == 1
+    # Damage is reported to the approving officer; it does not reduce the loan amount.
+    assert S.inventory_stats(listed)["max_loan_amount"] == before
 
 
 def test_weight_corrections_are_the_only_weight_entries_in_the_audit(listed):
@@ -376,7 +395,7 @@ def test_report_review_reasons(listed):
     texts = " | ".join(r["text"] for r in report["reasons"])
     assert report["recommendation"] == "REVIEW"
     assert "2 item(s) have no weight" in texts
-    assert "Purity was not measured on the CaratMeter" in texts
+    assert "Purity was not measured on the Karatometer" in texts
     assert "No weighing-machine total captured" in texts
     assert "No documentary proof uploaded" in texts
 
@@ -426,38 +445,39 @@ def test_view_masks_kyc_and_carries_the_journey(listed):
     assert v["gate"]["allowed"] is True  # three ornaments are listed
     assert [i["key"] for i in v["options"]["materials"]] == ["gold", "silver"]
     assert v["options"]["grades"]["gold"][0] == "24K"
-    assert v["caratmeter"]["device_id"] == "CM-FED-MUM-001"
+    assert v["caratmeter"]["device_id"] == "KM-FED-MUM-001"
     assert v["weight"]["entered_g"] == 0 and v["weight"]["unweighed"] == ["Gold Chain", "Gold Bangle", "Silver Anklet"]
 
 
 def test_valuation_is_captured_when_the_session_starts():
     custom = Settings().valuation_snapshot()
-    custom["materials"][0]["ltv_pct"] = 50
+    custom["rate_per_gram"] = 9000
+    custom["wastage_pct"] = 5
     st = S.new_state(customer(), ai_enabled=True, valuation=custom)
     st["session_id"] = "0" * 32
     S.record_collateral(st, photo(), collateral_result(["Gold Chain"]))
     S.set_item_weight(st, "item-1", 10)
     S.record_measurements(st, readings(st))
-    v = S.view(st, Settings())  # live settings (LTV 75) must not change this session
-    assert v["valuation"]["items"][0]["ltv_pct"] == 50
-    assert v["valuation"]["totals"]["pledge_amount"] == round(10 * 8500 * 0.5)
+    v = S.view(st, Settings())  # live settings (₹8,500 at 3%) must not change this session
+    totals = v["valuation"]["totals"]
+    assert (totals["rate_per_gram"], totals["wastage_pct"]) == (9000, 5)
+    assert totals["net_weight_g"] == 9.5 and totals["max_loan_amount"] == round(9.5 * 9000)
 
 
-def test_value_item_math_and_damage_modes():
+def test_value_item_math():
     from app.valuation import grade_for_fineness, material_config, value_inventory, value_item
 
     val = Settings().valuation_snapshot()
-    ring = {"id": "item-1", "name": "Ring", "material": "gold", "carat": "", "weight_gm": 5, "damage_percent": 10,
+    ring = {"id": "item-1", "name": "Ring", "material": "gold", "carat": "", "weight_gm": 5,
             "measurement": {"weight_g": 5.0, "grade": "22K", "fineness_pct": 91.7}}
     valued = value_item(ring, val)
-    assert (valued["weight_basis"], valued["grade"], valued["gross_value"]) == ("entered", "22K", 42500)
-    assert valued["pledge_amount"] == 31556 and valued["damage_deduction"] == 319  # 42500 × 75% × (1 − 1%)
+    assert (valued["gross_weight_g"], valued["grade"]) == (5.0, "22K")
+    assert valued["net_weight_g"] == 4.85 and valued["wastage_g"] == 0.15
+    assert valued["loan_amount"] == round(4.85 * 8500)
 
-    assert value_item({**ring, "damage_percent": 20}, {**val, "damage_deduction": "percent"})["pledge_amount"] == 25500
-    assert value_item(ring, {**val, "damage_deduction": "none"})["pledge_amount"] == 31875
-
+    # Purity is shown, not priced: an unassayed ornament still carries its share of the net weight.
     unmeasured = value_item({**ring, "measurement": None}, val)
-    assert unmeasured["unpriced"] and unmeasured["pledge_amount"] == 0
+    assert unmeasured["unpriced"] and unmeasured["net_weight_g"] == 4.85
     assert value_inventory([ring, {**ring, "id": "item-2", "measurement": None, "name": "Odd"}], val)["totals"]["unpriced"] == ["Odd"]
 
     gold = material_config(val, "gold")

@@ -20,7 +20,7 @@ import ShellkodeLogo from "./ShellkodeLogo";
 const MORE: { view: NavView; icon: IconName; label: string; hint: string }[] = [
   { view: "reports", icon: "chart", label: "Reports", hint: "Outcomes by date and loan account" },
   { view: "history", icon: "history", label: "History", hint: "Reopen a past verification" },
-  { view: "settings", icon: "gear", label: "Settings", hint: "AI, thresholds and pledge valuation" },
+  { view: "settings", icon: "gear", label: "Settings", hint: "AI, thresholds, rate and purity grades" },
 ];
 
 /**
@@ -77,7 +77,7 @@ export default function MobileShell() {
             {onVerify ? session?.loan.customer_name || "GL Portal" : MORE.find((m) => m.view === state.view)?.label}
           </p>
           <p className={cn("truncate text-2xs text-ink-muted", reference && "font-mono")}>
-            {onVerify ? reference || "Gold loan collateral verification" : "Federal Bank"}
+            {onVerify ? reference || "Gold Loan Originating System" : "Federal Bank"}
           </p>
         </div>
         {session && onVerify && (
@@ -183,7 +183,7 @@ export default function MobileShell() {
                 <FederalMonogram />
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-ink">GL Portal</p>
-                  <p className="truncate text-2xs text-ink-muted">Gold Loan Collateral Verification</p>
+                  <p className="truncate text-2xs text-ink-muted">Gold Loan Originating System</p>
                 </div>
               </div>
 

@@ -45,12 +45,12 @@ export interface Measurement {
 export type WeightSource = "" | "ai" | "assessor";
 
 export interface InventoryItem {
-  /** Generated here (item-1, item-2 …) and used as the CaratMeter request tag. */
+  /** Generated here (item-1, item-2 …) and used as the Karatometer request tag. */
   id: string;
   name: string;
   /** Valuation material key, e.g. "gold" | "silver". */
   material: string;
-  /** Purity token: empty until the CaratMeter assays it ("22" = 22K gold, "925" = sterling silver). */
+  /** Purity token: empty until the Karatometer assays it ("22" = 22K gold, "925" = sterling silver). */
   carat: string;
   /** Grams. 0 until the machine total is apportioned or the assessor types one. */
   weight_gm: number;
@@ -59,7 +59,8 @@ export interface InventoryItem {
   /** The agent's one-phrase reason for this share, e.g. "heavy 22K bangle". */
   weight_basis?: string;
   quantity: number;
-  damage_percent: number;
+  /** True once damage has been recorded against this ornament. */
+  damaged: boolean;
   origin: ItemStatus;
   status: ItemStatus;
   thumb_asset_id: string | null;
@@ -105,8 +106,6 @@ export interface DamageEntry {
   item: string;
   type: string;
   severity: Severity;
-  /** Percentage the assessor recorded; the Settings rule turns it into a deduction. */
-  damage_percent: number;
   assessor_details: string;
   asset_id: string | null;
   thumb_asset_id: string | null;
@@ -172,11 +171,15 @@ export interface Stats {
   manual: number;
   weighed: number;
   damaged: number;
-  /** Total of the weights entered by the assessor. */
+  /** Total of the per-ornament weights. */
   total_weight: number;
+  gross_weight: number;
+  net_weight: number;
   measured_weight: number | null;
   measured: number;
   measurement_flags: number;
+  max_loan_amount: number;
+  /** The historical key for the same figure; reports written before the rename still use it. */
   pledge_amount: number;
   pledge_is_estimate: boolean;
 }
@@ -193,7 +196,7 @@ export interface ScaleReading {
   recorded_at: string;
 }
 
-export interface CaratMeterDevice {
+export interface KaratometerDevice {
   device_id?: string | null;
   model?: string | null;
   branch?: string | null;
@@ -203,7 +206,14 @@ export interface CaratMeterDevice {
 }
 
 export interface WeightSummary {
-  /** Total of the weights entered per item. */
+  /** What the ornaments weigh: the machine reading, or the pledge list when it could not be read. */
+  gross_g: number;
+  wastage_pct: number;
+  wastage_g: number;
+  /** Gross weight less wastage — the weight the loan is sized on. */
+  net_g: number;
+  rate_per_gram: number;
+  /** Total of the per-ornament weights. */
   entered_g: number;
   measured_g: number | null;
   measured_complete: boolean;
@@ -221,43 +231,50 @@ export interface WeightSummary {
   tolerance_g: number;
   item_tolerance_g: number;
   purity_tolerance_pct: number;
-  device: CaratMeterDevice | null;
+  device: KaratometerDevice | null;
   measured_at: string | null;
   counts: Record<MeasurementStatus, number>;
   flagged: number;
 }
-
-export type DamageDeduction = "tenths" | "percent" | "none";
 
 export interface ValuedItem {
   ornament_id: string;
   name: string;
   material: string;
   grade: string | null;
-  weight_g: number;
-  weight_basis: "entered";
+  gross_weight_g: number;
+  wastage_g: number;
+  net_weight_g: number;
   measured: boolean;
   rate_per_gram: number;
-  gross_value: number;
-  ltv_pct: number;
-  damage_percent: number;
-  damage_deduction: number;
-  pledge_amount: number;
+  loan_amount: number;
+  /** True while the Karatometer has not graded this ornament's purity. */
   unpriced: boolean;
 }
 
 export interface ValuationView {
   items: ValuedItem[];
   totals: {
-    weight_g: number;
-    gross_value: number;
-    damage_deduction: number;
+    gross_weight_g: number;
+    wastage_pct: number;
+    wastage_g: number;
+    net_weight_g: number;
+    rate_per_gram: number;
+    /** Net weight × the rate per gram. */
+    max_loan_amount: number;
+    /** The same figure under its historical key, kept for reports written before the rename. */
     pledge_amount: number;
     is_estimate: boolean;
     unpriced: string[];
   };
-  damage_deduction_mode: DamageDeduction;
-  materials: { key: string; name: string; ltv_pct: number }[];
+  materials: { key: string; name: string }[];
+}
+
+export interface SignatureRecord {
+  role: "customer" | "assessor" | "officer";
+  name: string;
+  kind: "drawn" | "typed";
+  signed_at: string;
 }
 
 export interface Report {
@@ -270,6 +287,9 @@ export interface Report {
   stats: Stats;
   valuation?: ValuationView;
   weight?: WeightSummary | null;
+  /** Set once the signed report has been submitted at the counter. */
+  submitted_at?: string | null;
+  signatures?: SignatureRecord[];
 }
 
 export interface Gate {
@@ -290,7 +310,7 @@ export interface SessionView {
   collateral: CollateralState;
   /** The weighing-machine photo and the total it showed. */
   scale: ScaleReading | null;
-  measurements: { device: CaratMeterDevice; measured_at: string; count: number } | null;
+  measurements: { device: KaratometerDevice; measured_at: string; count: number } | null;
   weight: WeightSummary;
   valuation: ValuationView;
   caratmeter: { device_id: string; model: string; mode: "mock" | "http" };
@@ -298,6 +318,7 @@ export interface SessionView {
   documents: DocumentsState | null;
   audit: AuditEntry[];
   report: Report | null;
+  signatures: SignatureRecord[];
   stats: Stats;
   cbs_damage_pending: string[];
   allowed_actions: StepAction[];
@@ -315,7 +336,6 @@ export interface SessionView {
     carats: string[];
     materials: { key: string; name: string }[];
     grades: Record<string, string[]>;
-    damage_deduction: DamageDeduction;
   };
 }
 
@@ -363,7 +383,9 @@ export interface AppSettings {
   valuation: { materials: MaterialConfig[] };
   weight_tolerance_g: number;
   purity_tolerance_pct: number;
-  damage_deduction: DamageDeduction;
+  /** The loan amount: net weight × this rate, where net = gross less wastage_pct. */
+  rate_per_gram: number;
+  wastage_pct: number;
 }
 
 export type CountTriple = { pass: number; alert: number; fail: number };

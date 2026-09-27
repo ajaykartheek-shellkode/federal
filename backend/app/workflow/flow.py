@@ -47,9 +47,8 @@ class DamageUpload:
     ornament_id: str
     type: str
     severity: str
-    damage_percent: float
     details: str
-    image: Asset
+    image: Optional[Asset] = None  # a close-up is evidence when there is one, never a requirement
 
 
 @dataclass
@@ -249,7 +248,7 @@ async def _scale_photo(ctx: StepContext) -> None:
 
 # --------------------------------------------------------------------------- weight & purity
 async def _measure(ctx: StepContext) -> None:
-    """One CaratMeter request for this loan application, covering every ornament id."""
+    """One Karatometer request for this loan application, covering every ornament id."""
     state, settings = ctx.state, ctx.settings
     loan = state["loan"]
     branch, reference = loan.get("branch", ""), S.application_ref(state)
@@ -302,7 +301,7 @@ async def _measure(ctx: StepContext) -> None:
         "entered_g": weight["entered_g"],
         "scale_differs": weight["scale_status"] == "mismatch" and not weight["scale_overridden"],
         "scale_missing": weight["scale_status"] in ("pending", "missing") and not weight["scale_overridden"],
-        "pledge_amount": totals["pledge_amount"],
+        "max_loan_amount": totals["max_loan_amount"],
         "blocker": blocker,
     })
 
@@ -311,22 +310,33 @@ async def _measure(ctx: StepContext) -> None:
 async def _damage(ctx: StepContext) -> None:
     state, uploads = ctx.state, ctx.inputs.damage
     ex = ExecRun(ctx, "damage", STEPS.DAMAGE_STEPS if ctx.ai else STEPS.DAMAGE_MANUAL_STEPS)
-    images = [u.image for u in uploads]
-    stored = await ex.step("receive", asyncio.to_thread(_store_uploads, images))
+    # Only the entries that came with a close-up are stored and sent to the agent; the rest are
+    # recorded on the assessor's word alone.
+    with_photo = [i for i, u in enumerate(uploads) if u.image is not None]
+    images = [uploads[i].image for i in with_photo]
+    stored_photos = await ex.step("receive", asyncio.to_thread(_store_uploads, images))
 
-    results: List[Optional[object]] = [None] * len(uploads)
-    if ctx.ai:
+    photo_results: List[Optional[object]] = [None] * len(with_photo)
+    if ctx.ai and images:
         calls = []
-        for u in uploads:
+        for i in with_photo:
+            u = uploads[i]
             row = S.find_item(state, u.ornament_id)
             calls.append(damage_agent.validate_damage(
                 u.ornament_id, row["name"], row.get("carat") or "", damage_agent.describe_damage(u.type, u.details), u.image,
             ))
-        results = await ex.step("detect", asyncio.gather(*calls))
+        photo_results = await ex.step("detect", asyncio.gather(*calls))
         await ex.step("type")
         await ex.step("severity")
         await ex.step("match")
-    thumbs = await ex.step("thumb", asyncio.to_thread(_store_thumbnails, images))
+    photo_thumbs = await ex.step("thumb", asyncio.to_thread(_store_thumbnails, images))
+
+    # Line the photo-only lists back up with the uploads they came from.
+    stored = [None] * len(uploads)
+    thumbs: List[Optional[str]] = [None] * len(uploads)
+    results: List[Optional[object]] = [None] * len(uploads)
+    for slot, i in enumerate(with_photo):
+        stored[i], thumbs[i], results[i] = stored_photos[slot], photo_thumbs[slot], photo_results[slot]
 
     for u, meta, thumb, res in zip(uploads, stored, thumbs, results):
         row = S.find_item(state, u.ornament_id)
@@ -335,11 +345,10 @@ async def _damage(ctx: StepContext) -> None:
             "item": row["name"],
             "type": u.type,
             "severity": u.severity,
-            "damage_percent": u.damage_percent,
             "assessor_details": u.details,
-            "asset_id": meta["asset_id"],
-            "thumb_asset_id": thumb or meta["asset_id"],
-            "filename": meta["filename"],
+            "asset_id": (meta or {}).get("asset_id"),
+            "thumb_asset_id": thumb or (meta or {}).get("asset_id"),
+            "filename": (meta or {}).get("filename", ""),
             "status": res.status if res else "not_checked",
             "consistent": res.reasoning.consistent_with_description if res else None,
             "observed": res.reasoning.observed_damage if res else [],
@@ -353,16 +362,23 @@ async def _damage(ctx: StepContext) -> None:
 
     statuses = [r.status for r in results if r]
     review = sum(1 for s in statuses if s != "pass")
-    summary = f"{len(uploads)} item{'s' if len(uploads) != 1 else ''} analysed" + (f" · {review} to review" if review else "")
-    await ex.finish(S.worst(statuses) or "not_checked", summary if ctx.ai else f"{len(uploads)} recorded")
+    without = len(uploads) - len(with_photo)
+    summary = f"{len(uploads)} item{'s' if len(uploads) != 1 else ''} recorded"
+    if statuses:
+        summary += f" · {len(statuses)} photo{'s' if len(statuses) != 1 else ''} checked"
+    if review:
+        summary += f" · {review} to review"
+    if without:
+        summary += f" · {without} without a photo"
+    await ex.finish(S.worst(statuses) or "not_checked", summary)
     await ctx.push_state()
     following = S.next_state(state, "damage")
     await ctx.say("damage", {
         "ai_enabled": ctx.ai,
         "recorded": [S.find_item(state, u.ornament_id)["name"] for u in uploads],
         "needs_review": review,
-        "deduction": round(sum(u.damage_percent for u in uploads), 2),
-        "next_label": "pledge valuation" if following == "valuation" else "documents",
+        "without_photo": without,
+        "next_label": "loan valuation" if following == "valuation" else "documents",
     })
 
 
@@ -452,7 +468,7 @@ async def _report(ctx: StepContext) -> None:
     await ctx.push_state()
     await ctx.say("report", {
         "report_id": report["report_id"], "recommendation": report["recommendation"], "warnings": warnings,
-        "pledge_amount": report["stats"]["pledge_amount"],
+        "max_loan_amount": report["stats"]["max_loan_amount"],
         "account_number": issued,
         "application_no": state["loan"].get("application_no", ""),
         "fresh": S.is_fresh_application(state),

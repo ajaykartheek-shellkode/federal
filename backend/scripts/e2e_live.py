@@ -1,7 +1,7 @@
 """Live end-to-end run against a running API with real Bedrock calls.
 
 Signs in as the branch assessor, finds Rajesh Kumar by mobile number, and walks the journey —
-collateral → weighing machine (total split across the ornaments) → CaratMeter → damage → pledge →
+collateral → weighing machine (total split across the ornaments) → Karatometer → damage → pledge →
 documents → report — using the images in ../sampleImages, printing each streamed event.
 
     ./.venv/bin/uvicorn main:app --port 8000          # in one terminal
@@ -91,7 +91,7 @@ def main() -> int:
             s = client.get(f"{API}/api/chat/session/{sid}").json()["session"]
         print(f"   pledge list total: {s['weight']['entered_g']} g\n")
 
-        print("→ CaratMeter")
+        print("→ Karatometer")
         s = run_step(client, sid, "measure")
         for r in s["inventory"]:
             m = r.get("measurement") or {}

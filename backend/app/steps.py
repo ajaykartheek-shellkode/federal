@@ -39,7 +39,7 @@ SCALE_MANUAL_STEPS = [
 ]
 
 WEIGHT_STEPS = [
-    {"key": "connect", "label": "Connecting to CaratMeter"},
+    {"key": "connect", "label": "Connecting to Karatometer"},
     {"key": "request", "label": "Requesting the assay for every ornament"},
     {"key": "grade", "label": "Grading purity against valuation table"},
     {"key": "crosscheck", "label": "Cross-checking with the entered weights"},
@@ -83,7 +83,7 @@ DOCUMENT_MANUAL_STEPS = [
 REPORT_STEPS = [
     {"key": "generator", "label": "Invoking Report Generator"},
     {"key": "collateral", "label": "Compiling collateral verification"},
-    {"key": "weight", "label": "Compiling weight, purity & pledge valuation"},
+    {"key": "weight", "label": "Compiling weight, purity & loan valuation"},
     {"key": "damage", "label": "Compiling damage assessment"},
     {"key": "docs", "label": "Compiling document verification"},
     {"key": "overrides", "label": "Checking override audit trail"},

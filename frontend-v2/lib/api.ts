@@ -107,6 +107,16 @@ export interface SessionSummary {
 export const fetchOpenSessions = (limit = 20) =>
   request<{ sessions: SessionSummary[] }>(`/api/chat/sessions?open_only=true&limit=${limit}`).then((r) => r.sessions);
 
+export interface SignaturePayload {
+  role: "customer" | "assessor" | "officer";
+  name: string;
+  kind: "drawn" | "typed";
+}
+
+/** Submit the signed report. The customer's signature is what makes it a submission. */
+export const submitReport = (sessionId: string, signatures: SignaturePayload[]) =>
+  request<{ session: SessionView }>("/api/chat/submit", json("POST", { session_id: sessionId, signatures }));
+
 export const askAgent = (sessionId: string, question: string) =>
   request<{ text: string }>("/api/chat/answer", json("POST", { session_id: sessionId, question }));
 
@@ -144,6 +154,13 @@ export interface NewItem {
 export const addInventoryItem = (sessionId: string, item: NewItem) =>
   request<{ session: SessionView }>("/api/chat/item", json("POST", { session_id: sessionId, ...item }));
 
+/** Drop a collateral photo the assessor is re-taking, with the ornaments only it produced. */
+export const removeCollateralPhoto = (sessionId: string, index: number) =>
+  request<{ session: SessionView; removed_ornaments: string[] }>(
+    "/api/chat/collateral/remove",
+    json("POST", { session_id: sessionId, index })
+  );
+
 export const removeInventoryItem = (sessionId: string, ref: string, justification = "") =>
   request<{ session: SessionView }>("/api/chat/item/remove", json("POST", { session_id: sessionId, ref, justification }));
 
@@ -151,9 +168,9 @@ export interface DamageInput {
   ornament_id: string;
   type: string;
   severity: string;
-  damage_percent: number;
   details: string;
-  file: File;
+  /** Optional: a close-up is evidence for the approving officer, never a requirement. */
+  file: File | null;
 }
 
 export interface DocumentInput {
@@ -175,19 +192,20 @@ export function buildStepForm(sessionId: string, action: StepAction, payload: St
   (payload.collateral ?? []).forEach((f) => form.append("collateral_images", f, f.name));
   if (payload.scale) form.append("scale_image", payload.scale, payload.scale.name);
   const damage = payload.damage ?? [];
+  // Each hint declares whether a photo follows it, so the images line up without being mandatory.
   form.append(
     "damage_hints",
     JSON.stringify(
-      damage.map(({ ornament_id, type, severity, damage_percent, details }) => ({
+      damage.map(({ ornament_id, type, severity, details, file }) => ({
         ornament_id,
         type,
         severity,
-        damage_percent,
         details,
+        photo: !!file,
       }))
     )
   );
-  damage.forEach((d) => form.append("damage_images", d.file, d.file.name));
+  damage.forEach((d) => d.file && form.append("damage_images", d.file, d.file.name));
   const docs = payload.documents ?? [];
   form.append("document_types", JSON.stringify(docs.map((d) => d.declared_type)));
   docs.forEach((d) => form.append("documents", d.file, d.file.name));

@@ -8,10 +8,11 @@ Validation
 * doc_match_threshold_pct   — document address similarity below this is flagged
 
 Measurement & valuation (captured when a session starts, so a verification is valued consistently)
-* valuation                 — materials (gold, silver, …) each with an LTV % and purity grades
+* rate_per_gram, wastage_pct — the loan amount: net weight (gross less wastage) × rate per gram
+* valuation                 — materials (gold, silver, …) and the purity grades a fineness maps to
                               (fineness % and rate per gram)
 * weight_tolerance_g        — measured vs declared weight difference allowed per ornament
-* purity_tolerance_pct      — fineness margin (percentage points) when grading a CaratMeter reading
+* purity_tolerance_pct      — fineness margin (percentage points) when grading a Karatometer reading
 * damage_deduction          — how the CBS damage % reduces the pledge amount
 """
 
@@ -34,6 +35,8 @@ BOUNDS: Dict[str, tuple] = {
     "doc_match_threshold_pct": (50, 100),
     "weight_tolerance_g": (0.0, 5.0),
     "purity_tolerance_pct": (0.0, 5.0),
+    "rate_per_gram": (0.0, 1_000_000.0),
+    "wastage_pct": (0.0, 25.0),
 }
 
 DamageDeduction = Literal["tenths", "percent", "none"]
@@ -111,6 +114,9 @@ class Settings(BaseModel):
     weight_tolerance_g: float = 0.10
     purity_tolerance_pct: float = 0.5
     damage_deduction: DamageDeduction = "tenths"
+    # The loan amount: net weight (gross less wastage) at one fixed rate per gram.
+    rate_per_gram: float = 8500
+    wastage_pct: float = 3.0
 
     def is_enabled_for(self, scenario: str) -> bool:
         # Unknown scenarios default to enabled so new CBS scenario names are never silently skipped.
@@ -123,6 +129,8 @@ class Settings(BaseModel):
             "weight_tolerance_g": self.weight_tolerance_g,
             "purity_tolerance_pct": self.purity_tolerance_pct,
             "damage_deduction": self.damage_deduction,
+            "rate_per_gram": self.rate_per_gram,
+            "wastage_pct": self.wastage_pct,
         }
 
 
@@ -136,6 +144,8 @@ class SettingsPatch(BaseModel):
     weight_tolerance_g: Optional[float] = None
     purity_tolerance_pct: Optional[float] = None
     damage_deduction: Optional[DamageDeduction] = None
+    rate_per_gram: Optional[float] = None
+    wastage_pct: Optional[float] = None
 
 
 def _to_model(row) -> Settings:
@@ -149,6 +159,8 @@ def _to_model(row) -> Settings:
         weight_tolerance_g=row.weight_tolerance_g if row.weight_tolerance_g is not None else 0.10,
         purity_tolerance_pct=row.purity_tolerance_pct if row.purity_tolerance_pct is not None else 0.5,
         damage_deduction=row.damage_deduction or "tenths",
+        rate_per_gram=row.rate_per_gram if row.rate_per_gram is not None else 8500,
+        wastage_pct=row.wastage_pct if row.wastage_pct is not None else 3.0,
     )
 
 

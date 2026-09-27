@@ -6,8 +6,25 @@ import { cn } from "@/lib/format";
 type Mode = "draw" | "type";
 const INK = "#082461";
 
+export interface SignatureState {
+  /** What the person typed, or the role when they drew instead. */
+  name: string;
+  kind: "drawn" | "typed";
+}
+
 /** e-signature block: draw or type, then lock. Prints cleanly. */
-export default function SignaturePad({ role, name, detail }: { role: string; name?: string; detail: string }) {
+export default function SignaturePad({
+  role,
+  name,
+  detail,
+  onChange,
+}: {
+  role: string;
+  name?: string;
+  detail: string;
+  /** Reports the signature up so the report can be submitted once the customer has signed. */
+  onChange?: (signature: SignatureState | null) => void;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawing = useRef(false);
   const [mode, setMode] = useState<Mode>("draw");
@@ -76,6 +93,7 @@ export default function SignaturePad({ role, name, detail }: { role: string; nam
   const sign = () => {
     const at = new Date().toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
     setSigned(mode === "draw" ? { at, image: canvasRef.current?.toDataURL("image/png") } : { at, text: typed.trim() });
+    onChange?.(mode === "draw" ? { name: name || role, kind: "drawn" } : { name: typed.trim(), kind: "typed" });
   };
 
   return (
@@ -123,7 +141,13 @@ export default function SignaturePad({ role, name, detail }: { role: string; nam
               </svg>
               e-Signed
             </span>
-            <button onClick={() => setSigned(null)} className="no-print text-[11px] text-[#58647A] underline-offset-2 hover:underline">
+            <button
+              onClick={() => {
+                setSigned(null);
+                onChange?.(null);
+              }}
+              className="no-print text-[11px] text-[#58647A] underline-offset-2 hover:underline"
+            >
               Re-sign
             </button>
           </div>
