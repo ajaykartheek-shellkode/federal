@@ -139,6 +139,106 @@ function DamageChip({ damage }: { damage?: DamageEntry }) {
   );
 }
 
+/**
+ * One ornament on a phone. A seven-column table can't shrink, so the same facts are stacked:
+ * who it is, what it weighs, what the CaratMeter said, and what it is worth.
+ */
+function ItemCard({
+  ctx,
+  show,
+}: {
+  ctx: RowContext;
+  show: { reading: boolean; damage: boolean; pledge: boolean };
+}) {
+  const { openDialog } = useVerification();
+  const { item, valued, damage, session } = ctx;
+  const locked = session.workflow_state === "done";
+  const canRecordDamage = session.allowed_actions.includes("damage");
+  const flagged = FLAGGED.includes(item.measurement_status ?? "pending") && !item.measurement_overridden;
+  const status = item.measurement_status ?? "pending";
+  const m = item.measurement;
+
+  return (
+    <motion.li layout="position" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="border-b border-line px-4 py-3 last:border-b-0">
+      <div className="flex items-start gap-3">
+        <Thumb
+          assetId={item.thumb_asset_id}
+          alt={item.name}
+          size={48}
+          onClick={
+            item.thumb_asset_id
+              ? () => openDialog({ kind: "lightbox", src: assetUrl(item.thumb_asset_id), title: item.name, caption: "Cropped from the collateral photo" })
+              : undefined
+          }
+        />
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-2 text-sm font-semibold text-ink">
+            <span className="truncate">{item.name}</span>
+            {item.quantity > 1 && <span className="shrink-0 text-xs font-normal text-ink-muted">×{item.quantity}</span>}
+          </p>
+          <p className="mt-0.5 flex items-center gap-2 font-mono text-2xs text-ink-faint">
+            {item.id}
+            {item.material !== "gold" && <span className="font-sans capitalize">{item.material}</span>}
+            {item.origin === "manual" && (
+              <span className="font-sans">
+                <Badge tone="brand">Added</Badge>
+              </span>
+            )}
+          </p>
+        </div>
+        {show.pledge && (
+          <div className="shrink-0 text-right">
+            <p className={cn("text-sm font-bold tabular-nums", valued?.unpriced ? "text-ink-faint" : "text-brand-700")}>
+              {formatINR(valued?.pledge_amount ?? 0)}
+            </p>
+            <p className="text-2xs text-ink-faint">
+              {valued?.unpriced ? "not assayed" : `at ${formatINR(valued?.rate_per_gram ?? 0)}/g`}
+            </p>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2 pl-[60px]">
+        <span className="inline-flex items-center gap-1.5 text-sm">
+          <span className="text-2xs uppercase tracking-wide text-ink-faint">Weight</span>
+          <WeightCell item={item} locked={locked} />
+        </span>
+        {show.reading &&
+          (m ? (
+            <span className="inline-flex items-center gap-1.5 text-sm">
+              <span className="font-semibold tabular-nums text-ink">{m.fineness_pct.toFixed(2)}%</span>
+              <Badge tone={m.grade ? "ok" : "bad"}>{m.grade ?? "Ungraded"}</Badge>
+              {item.measurement_overridden ? (
+                <Badge tone="brand" icon="pen">Accepted</Badge>
+              ) : (
+                <Badge tone={MEASURE_META[status].tone} dot>{MEASURE_META[status].label}</Badge>
+              )}
+            </span>
+          ) : (
+            <span className="text-xs text-ink-faint">Not assayed</span>
+          ))}
+        {show.damage && damage && <DamageChip damage={damage} />}
+      </div>
+
+      {item.weight_source === "ai" && item.weight_basis && (
+        <p className="mt-1.5 pl-[60px] text-xs italic text-ink-muted">“{item.weight_basis}”</p>
+      )}
+
+      <div className="mt-2.5 flex items-center gap-1 pl-[60px]">
+        {show.reading && flagged && !locked && (
+          <Button size="sm" variant="secondary" icon="shieldCheck" onClick={() => openDialog({ kind: "override", target: "measurement", ref: item.id })}>
+            Accept reading
+          </Button>
+        )}
+        <span className="flex-1" />
+        {canRecordDamage && <IconAction icon="alert" label={`Record damage for ${item.name}`} onClick={() => openDialog({ kind: "damage", ornamentId: item.id })} />}
+        {!locked && <IconAction icon="pen" label={`Correct ${item.name}`} onClick={() => openDialog({ kind: "edit", ref: item.id })} />}
+        {!locked && <IconAction icon="trash" label={`Remove ${item.name} from the list`} onClick={() => openDialog({ kind: "remove-item", ref: item.id })} />}
+      </div>
+    </motion.li>
+  );
+}
+
 function ItemRow({ ctx, columns }: { ctx: RowContext; columns: Column[] }) {
   const flash = useFlash(ctx.item.status);
   const border = ctx.damage ? "border-b-0" : "border-b border-line";
@@ -460,7 +560,28 @@ export default function InventoryTable({ session }: { session: SessionView }) {
           </div>
         }
       />
-      <div className="overflow-x-auto">
+      {/* Phone and tablet: one card per ornament. */}
+      <ul className="desk:hidden">
+        <AnimatePresence initial={false}>
+          {inventory.map((item) => (
+            <ItemCard
+              key={item.id}
+              ctx={{ item, valued: valuedById.get(item.id), damage: byItem.get(item.id), session }}
+              show={{ reading: showReading, damage: showDamage, pledge: showPledge }}
+            />
+          ))}
+        </AnimatePresence>
+        {showPledge && (
+          <li className="flex items-center justify-between border-t border-line bg-subtle px-4 py-3">
+            <span className="text-sm font-bold text-ink">
+              Total <span className="ml-2 font-normal tabular-nums text-ink-muted">{formatWeight(stats.total_weight)}</span>
+            </span>
+            <span className="text-base font-bold tabular-nums text-brand-700">{formatINR(totals.pledge_amount)}</span>
+          </li>
+        )}
+      </ul>
+
+      <div className="hidden overflow-x-auto desk:block">
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="border-y border-line bg-subtle text-left text-2xs font-bold uppercase tracking-wider text-ink-muted">

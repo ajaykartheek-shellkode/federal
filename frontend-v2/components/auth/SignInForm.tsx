@@ -95,11 +95,25 @@ export default function SignInForm() {
       </section>
 
       {/* ---------------------------------------------------------------- sign-in card */}
-      <section className="flex items-center justify-center bg-canvas px-6 py-12">
-        <motion.div variants={fadeUp} initial="hidden" animate="show" className="w-full max-w-[400px]">
-          <div className="mb-8 lg:hidden">
-            <FederalWordmark size={24} className="w-[170px]" />
-          </div>
+      <section className="flex flex-col bg-canvas lg:items-center lg:justify-center lg:px-6 lg:py-12">
+        {/* On a phone the brand panel is gone, so the top of the screen carries the identity. */}
+        <div className="fb-wave relative overflow-hidden bg-brand-hero px-6 pb-8 pt-10 text-white lg:hidden">
+          <div className="absolute -right-12 -top-16 h-52 w-52 rounded-full bg-gold-500/20 blur-3xl" aria-hidden />
+          <FederalWordmark invert size={22} className="relative w-[165px]" />
+          <p className="relative mt-5 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-[0.16em] text-gold-300">
+            <Icon name="sparkles" size={12} /> GL Portal
+          </p>
+          <h1 className="relative mt-1.5 text-2xl font-bold leading-tight text-white">
+            Gold loan collateral, verified at the counter.
+          </h1>
+        </div>
+
+        <motion.div
+          variants={fadeUp}
+          initial="hidden"
+          animate="show"
+          className="w-full max-w-[400px] flex-1 self-center px-6 pb-10 pt-8 lg:px-0 lg:pb-0 lg:pt-0"
+        >
 
           <h2 className="text-[26px] font-bold leading-tight text-ink">Sign in</h2>
           <p className="mt-1.5 text-sm text-ink-muted">Use your branch staff credentials to open the portal.</p>

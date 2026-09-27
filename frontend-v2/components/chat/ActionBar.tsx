@@ -155,14 +155,16 @@ export default function ActionBar() {
   }
 
   return (
-    <div className="border-t border-line bg-surface px-3 pb-2 pt-3">
+    // On a phone this is the pinned bar above the tabs: the primary action fills the width and the
+    // secondary sits beside it, so the next step is always one thumb-tap away.
+    <div className="z-10 border-t border-line bg-surface px-3 pb-2 pt-3 shadow-[0_-6px_18px_-12px_rgba(8,36,97,0.25)] desk:shadow-none">
       {/* Keyed by step: the new actions replace the old ones immediately (never a stale, clickable button). */}
       <motion.div
         key={ws}
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.22, ease }}
-        className="flex flex-wrap gap-2"
+        className="flex flex-wrap gap-2 [&>button]:min-h-11 [&>button:first-child]:flex-1 desk:[&>button]:min-h-0 desk:[&>button:first-child]:flex-none"
       >
         {primary}
         {secondary}

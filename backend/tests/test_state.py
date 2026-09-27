@@ -210,7 +210,7 @@ def test_weight_gate_wants_every_weight_then_the_readings(listed):
     assert listed["workflow_state"] == "weight"
     assert S.allowed_actions(listed) == ("scale_photo", "measure", "continue")
     g = S.gate(listed, False)
-    assert not g["allowed"] and "Enter the weight of 3 item(s)" in g["reasons"][0]
+    assert not g["allowed"] and "3 ornament(s) have no weight yet" in g["reasons"][0]
 
     weigh_all(listed)
     g = S.gate(listed, False)

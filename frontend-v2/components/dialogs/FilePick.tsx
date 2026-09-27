@@ -54,13 +54,19 @@ export function DropZone({
   hint?: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const captureRef = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
   const [camera, setCamera] = useState(false);
   // The camera API only exists on a secure origin; on plain HTTP the button would open a dead dialog.
   const [cameraAvailable, setCameraAvailable] = useState(true);
+  // On a phone the native camera beats our webcam dialog: better optics, no permission dance, and
+  // the assessor gets the shutter, flash and focus controls they already know.
+  const [nativeCamera, setNativeCamera] = useState(false);
 
   useEffect(() => {
     setCameraAvailable(!!navigator.mediaDevices?.getUserMedia);
+    const input = document.createElement("input");
+    setNativeCamera("capture" in input && window.matchMedia("(pointer: coarse)").matches);
   }, []);
 
   const accept = allowPdf ? "image/jpeg,image/png,image/webp,application/pdf" : "image/jpeg,image/png,image/webp";
@@ -98,7 +104,10 @@ export function DropZone({
           </motion.span>
         )}
         <div className={cn(compact && "min-w-0 flex-1")}>
-          <p className={cn("font-semibold text-ink", compact ? "text-xs" : "text-sm")}>{title}</p>
+          <p className={cn("font-semibold text-ink", compact ? "text-xs" : "text-sm")}>
+            {/* There is nothing to drop on a phone — the same line becomes an instruction. */}
+            {nativeCamera ? title.replace(/^Drop (the .+) here$/, "Take or choose $1") : title}
+          </p>
           {hint && <p className="mt-0.5 text-xs text-ink-muted">{hint}</p>}
         </div>
         <div className={cn("flex items-center gap-2", !compact && "mt-1")}>
@@ -106,20 +115,32 @@ export function DropZone({
             type="button"
             disabled={disabled}
             onClick={() => inputRef.current?.click()}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 text-xs font-semibold text-brand-700 transition-colors hover:border-brand-300 hover:bg-brand-50 disabled:cursor-not-allowed"
+            className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3.5 text-xs font-semibold text-brand-700 transition-colors hover:border-brand-300 hover:bg-brand-50 disabled:cursor-not-allowed desk:h-8 desk:px-3"
           >
             <Icon name="image" size={14} /> Browse
           </button>
           <button
             type="button"
-            disabled={disabled || !cameraAvailable}
-            onClick={() => setCamera(true)}
-            title={cameraAvailable ? undefined : "Camera capture needs an HTTPS connection — use Browse"}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 text-xs font-semibold text-brand-700 transition-colors hover:border-brand-300 hover:bg-brand-50 disabled:cursor-not-allowed disabled:text-ink-faint disabled:hover:border-line-strong disabled:hover:bg-surface"
+            disabled={disabled || !(cameraAvailable || nativeCamera)}
+            onClick={() => (nativeCamera ? captureRef.current?.click() : setCamera(true))}
+            title={cameraAvailable || nativeCamera ? undefined : "Camera capture needs an HTTPS connection — use Browse"}
+            className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3.5 text-xs font-semibold text-brand-700 transition-colors hover:border-brand-300 hover:bg-brand-50 disabled:cursor-not-allowed disabled:text-ink-faint disabled:hover:border-line-strong disabled:hover:bg-surface desk:h-8 desk:px-3"
           >
             <Icon name="camera" size={14} /> {cameraLabel}
           </button>
         </div>
+        <input
+          ref={captureRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(e) => {
+            const files = Array.from(e.target.files ?? []);
+            e.target.value = "";
+            if (files.length) onFiles(files);
+          }}
+        />
         <input
           ref={inputRef}
           type="file"

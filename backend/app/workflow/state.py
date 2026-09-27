@@ -369,7 +369,10 @@ def stage_blockers(state: dict, stage: str, blocker_mode: bool) -> List[str]:
         missing = unweighed_items(state)
         if missing:
             names = ", ".join(r["name"] for r in missing[:3]) + ("…" if len(missing) > 3 else "")
-            reasons.append(f"Enter the weight of {len(missing)} item(s) ({names}).")
+            reasons.append(
+                f"{len(missing)} ornament(s) have no weight yet ({names}). Upload the weighing-machine "
+                "photo, or type the weights on the pledge list."
+            )
         if not state.get("measurements"):
             reasons.append("Fetch the purity readings from the CaratMeter first.")
         elif blocker_mode:

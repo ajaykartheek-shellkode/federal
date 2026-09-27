@@ -34,7 +34,7 @@ export function CardHeader({
   className?: string;
 }) {
   return (
-    <header className={cn("flex items-start justify-between gap-3 px-5 pb-3 pt-4", className)}>
+    <header className={cn("flex flex-wrap items-start justify-between gap-x-3 gap-y-2 px-4 pb-3 pt-3.5 desk:flex-nowrap desk:px-5 desk:pt-4", className)}>
       <div className="flex min-w-0 items-start gap-3">
         {icon && (
           <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">

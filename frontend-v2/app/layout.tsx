@@ -17,6 +17,10 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: "#004E96",
+  width: "device-width",
+  initialScale: 1,
+  // The bottom bar paints into the home-indicator area and pads itself with the safe inset.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -14,8 +14,40 @@ export default function ProgressStepper({ session }: { session: SessionView }) {
   const current = session.workflow_state === "done" ? steps.length : steps.findIndex((s) => s.key === session.workflow_state);
   const fill = Math.min(1, current / (steps.length - 1));
 
+  const at = session.workflow_state === "done" ? steps.length - 1 : Math.max(current, 0);
+  const label = session.workflow_state === "done" ? "Complete" : steps[at]?.label ?? "";
+
   return (
-    <div className="flex items-center gap-6 rounded-2xl border border-line bg-surface/90 px-6 py-3.5 shadow-card backdrop-blur">
+    <>
+      {/* Phone: six circles and their labels can't fit, so it's a line and a name. */}
+      <div className="rounded-2xl border border-line bg-surface/95 px-4 py-2.5 shadow-card backdrop-blur desk:hidden">
+        <div className="flex items-center justify-between gap-3">
+          <p className="min-w-0 truncate text-xs font-semibold text-ink">
+            <span className="text-ink-muted">Step {Math.min(at + 1, steps.length)} of {steps.length} · </span>
+            {label}
+          </p>
+          <span className="flex shrink-0 items-center gap-1.5">
+            {session.settings.blocker_mode && (
+              <span title="Blocker mode" className="text-bad">
+                <Icon name="lock" size={13} />
+              </span>
+            )}
+            <span title={session.ai_enabled ? "AI validation on" : "AI validation off"} className={session.ai_enabled ? "text-ok" : "text-ink-faint"}>
+              <Icon name={session.ai_enabled ? "sparkles" : "x"} size={13} />
+            </span>
+          </span>
+        </div>
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line">
+          <motion.div
+            className="h-full rounded-full bg-gradient-to-r from-ok via-ok to-gold-500"
+            initial={false}
+            animate={{ width: `${Math.max(fill, 0.04) * 100}%` }}
+            transition={{ duration: 0.7, ease }}
+          />
+        </div>
+      </div>
+
+    <div className="hidden items-center gap-6 rounded-2xl border border-line bg-surface/90 px-6 py-3.5 shadow-card backdrop-blur desk:flex">
       <ol className="relative flex flex-1 items-start justify-between">
         <div className="absolute left-[16px] right-[16px] top-[15px] h-[3px] rounded-full bg-line" aria-hidden>
           <motion.div
@@ -60,5 +92,6 @@ export default function ProgressStepper({ session }: { session: SessionView }) {
         </Badge>
       </div>
     </div>
+    </>
   );
 }

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import RequireAuth from "@/components/auth/RequireAuth";
 import ReportDocument from "@/components/report/ReportDocument";
+import ScaledPage from "@/components/report/ScaledPage";
 import { FederalWordmark } from "@/components/shell/Brand";
 import Button from "@/components/ui/Button";
 import Icon from "@/components/ui/Icon";
@@ -36,41 +37,45 @@ function Report({ sessionId }: { sessionId: string }) {
   return (
     <div id="report-print-root" className="h-screen overflow-y-auto bg-canvas">
       <div className="no-print sticky top-0 z-10 border-b border-line bg-surface/95 backdrop-blur">
-        <div className="mx-auto flex h-16 max-w-[900px] items-center justify-between px-6">
-          <div className="flex items-center gap-4">
-            <FederalWordmark size={19} className="whitespace-nowrap" />
-            <span className="h-7 w-px bg-line" />
-            <span className="text-sm font-semibold text-ink">Verification report</span>
+        <div className="mx-auto flex h-16 max-w-[900px] items-center justify-between gap-2 px-3 desk:px-6">
+          <div className="flex min-w-0 items-center gap-3 desk:gap-4">
+            <FederalWordmark size={19} className="hidden whitespace-nowrap sm:block" />
+            <span className="hidden h-7 w-px bg-line sm:block" />
+            <span className="truncate text-sm font-semibold text-ink">Verification report</span>
           </div>
           <div className="flex items-center gap-2">
             <Link
               href={`/?session=${sessionId}`}
-              className="inline-flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-semibold text-ink-2 hover:bg-brand-50 hover:text-brand-700"
+              className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl px-3 text-sm font-semibold text-ink-2 hover:bg-brand-50 hover:text-brand-700 desk:px-4"
             >
-              <Icon name="arrowRight" size={16} className="rotate-180" /> Open in portal
+              <Icon name="arrowRight" size={16} className="rotate-180" /> <span className="hidden sm:inline">Open in portal</span>
             </Link>
-            <Button variant="secondary" icon="printer" disabled={!session?.report} onClick={() => window.print()}>
-              Print
-            </Button>
+            <span className="hidden desk:inline-flex">
+              <Button variant="secondary" icon="printer" disabled={!session?.report} onClick={() => window.print()}>
+                Print
+              </Button>
+            </span>
             {session?.report && (
               <a
                 href={reportPdfUrl(sessionId)}
                 download={`${session.report.report_id}.pdf`}
-                className="inline-flex h-10 items-center gap-2 rounded-xl bg-gold-500 px-4 text-sm font-semibold text-brand-900 shadow-gold transition-colors hover:bg-gold-400"
+                className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-gold-500 px-3.5 text-sm font-semibold text-brand-900 shadow-gold transition-colors hover:bg-gold-400 desk:px-4"
               >
-                <Icon name="download" size={16} /> Download PDF
+                <Icon name="download" size={16} /> <span className="hidden sm:inline">Download </span>PDF
               </a>
             )}
           </div>
         </div>
       </div>
-      <div className="px-6 py-8">
+      <div className="px-3 py-4 desk:px-6 desk:py-8">
         {error ? (
           <div className="mx-auto flex max-w-lg items-center gap-2 rounded-xl border border-warn-line bg-warn-soft px-4 py-3 text-sm text-warn">
             <Icon name="info" size={16} /> {error}
           </div>
         ) : session?.report ? (
-          <ReportDocument session={session} />
+          <ScaledPage>
+            <ReportDocument session={session} />
+          </ScaledPage>
         ) : (
           <div className="flex h-64 items-center justify-center gap-2 text-sm text-ink-muted">
             <Spinner /> Loading report…

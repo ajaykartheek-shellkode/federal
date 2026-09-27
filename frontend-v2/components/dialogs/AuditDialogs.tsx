@@ -222,7 +222,7 @@ export function EditItemDialog({ open, refId, onClose }: { open: boolean; refId:
       size="sm"
       icon="pen"
       title="Correct inventory item"
-      subtitle={`CBS record ${item.id}`}
+      subtitle={`Pledge list · ${item.id}`}
       dismissable={state.busy !== "mutate"}
       footer={
         <>
@@ -243,7 +243,7 @@ export function EditItemDialog({ open, refId, onClose }: { open: boolean; refId:
           <Input id="edit-name" data-autofocus value={name} maxLength={120} onChange={(e) => setName(e.target.value)} aria-invalid={touched && !!errors.name} />
           {touched && <FieldError>{errors.name}</FieldError>}
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <div>
             <Label htmlFor="edit-carat" hint="from the assay">
               Purity

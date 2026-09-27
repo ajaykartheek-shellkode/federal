@@ -10,6 +10,8 @@ import HistoryView from "@/components/views/HistoryView";
 import ReportsView from "@/components/views/ReportsView";
 import SettingsView from "@/components/views/SettingsView";
 import { viewTransition } from "@/lib/motion";
+import { useIsDesktop } from "@/lib/useMediaQuery";
+import MobileShell from "./MobileShell";
 import NavRail from "./NavRail";
 import TopBar from "./TopBar";
 
@@ -32,15 +34,24 @@ function Main() {
   );
 }
 
+/** Three columns on the desktop; one column with bottom tabs on a phone or tablet. */
+function Shell() {
+  const desktop = useIsDesktop();
+  if (!desktop) return <MobileShell />;
+  return (
+    <div className="flex h-screen max-h-screen overflow-hidden">
+      <NavRail />
+      <Main />
+      <ChatPanel />
+    </div>
+  );
+}
+
 export default function AppShell() {
   return (
     <MotionConfig reducedMotion="user">
       <VerificationProvider>
-        <div className="flex h-screen max-h-screen min-w-[1180px] overflow-hidden">
-          <NavRail />
-          <Main />
-          <ChatPanel />
-        </div>
+        <Shell />
         <DialogHost />
         <Toasts />
       </VerificationProvider>

@@ -38,21 +38,21 @@ export default function WelcomeHero() {
 
   return (
     <motion.div variants={stagger(0.08)} initial="hidden" animate="show" className="space-y-5">
-      <motion.section variants={fadeUp} className="fb-wave relative overflow-hidden rounded-3xl bg-brand-hero px-10 py-10 text-white shadow-raised">
+      <motion.section variants={fadeUp} className="fb-wave relative overflow-hidden rounded-2xl bg-brand-hero px-5 py-7 text-white shadow-raised desk:rounded-3xl desk:px-10 desk:py-10">
         <div className="absolute -right-16 -top-24 h-72 w-72 rounded-full bg-gold-500/15 blur-3xl" aria-hidden />
         <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-gold-300">
           <Icon name="sparkles" size={14} /> AI-guided verification
         </p>
-        <h1 className="mt-3 max-w-2xl text-[34px] font-bold leading-[1.12] text-white">
+        <h1 className="mt-3 max-w-2xl text-[26px] font-bold leading-[1.15] text-white desk:text-[34px] desk:leading-[1.12]">
           Verify gold loan collateral with <span className="text-gold-400">confidence</span>.
         </h1>
-        <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-white/75">
+        <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/75 desk:text-[15px]">
           Enter the customer&apos;s mobile number and the Verification Agent opens a loan application: the
           collateral photo builds the pledge list, the weighing machine gives every ornament its weight, the
           CaratMeter assays it, and the gold loan account is opened on sanction.
         </p>
         <form
-          className="mt-7 flex max-w-lg flex-wrap items-center gap-2 rounded-2xl bg-white/10 p-2 ring-1 ring-white/15 backdrop-blur"
+          className="mt-6 flex max-w-lg flex-wrap items-center gap-2 rounded-2xl bg-white/10 p-2 ring-1 ring-white/15 backdrop-blur desk:mt-7"
           onSubmit={(e) => {
             e.preventDefault();
             if (ready) void start(digits);
@@ -69,7 +69,7 @@ export default function WelcomeHero() {
             aria-label="Customer mobile number"
             className="h-11 min-w-0 flex-1 bg-transparent text-[15px] tracking-wide text-white outline-none placeholder:text-white/40"
           />
-          <Button type="submit" variant="gold" size="lg" iconRight="arrowRight" loading={state.busy === "start"} disabled={!ready}>
+          <Button type="submit" variant="gold" size="lg" iconRight="arrowRight" loading={state.busy === "start"} disabled={!ready} className="w-full sm:w-auto">
             Start verification
           </Button>
         </form>
@@ -96,13 +96,13 @@ export default function WelcomeHero() {
         )}
       </motion.section>
 
-      <motion.div variants={stagger(0.07, 0.1)} className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-5">
+      <motion.div variants={stagger(0.07, 0.1)} className="grid grid-cols-1 gap-3 sm:grid-cols-2 desk:grid-cols-3 xl:grid-cols-5 desk:gap-4">
         {STEPS.map((s, i) => (
           <motion.div
             key={s.title}
             variants={fadeUp}
             whileHover={{ y: -3 }}
-            className="rounded-2xl border border-line bg-surface p-5 shadow-card transition-shadow hover:shadow-raised"
+            className="rounded-2xl border border-line bg-surface p-4 shadow-card transition-shadow hover:shadow-raised desk:p-5"
           >
             <div className="flex items-center justify-between">
               <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-600">

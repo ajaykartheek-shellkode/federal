@@ -11,6 +11,12 @@
     @apply bg-canvas font-sans text-base text-ink-2 antialiased;
     overflow: hidden; /* the app shell owns its scroll regions */
     font-feature-settings: "tnum" 1;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* iOS zooms the page when a focused field is under 16px, so below the desktop breakpoint every
+     field is 16px; the desktop keeps its smaller scale. */
+  @media (max-width: 1179px) {
+    input, select, textarea { font-size: 16px; }
   }
   h1, h2, h3, h4 {
     @apply text-ink;
@@ -31,6 +37,16 @@
   *::-webkit-scrollbar { width: 8px; height: 8px; }
   *::-webkit-scrollbar-thumb { background: theme("colors.line.strong"); border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
   *::-webkit-scrollbar-track { background: transparent; }
+}
+
+@layer utilities {
+  /* Room for the iOS home indicator under anything pinned to the bottom of the screen. */
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .mb-safe { margin-bottom: env(safe-area-inset-bottom, 0px); }
+  .h-dvh { height: 100dvh; }
+  .max-h-dvh { max-height: 100dvh; }
+  /* Momentum scrolling that doesn't drag the whole page with it on iOS. */
+  .overscroll-none-y { overscroll-behavior-y: contain; }
 }
 
 @layer components {

@@ -66,7 +66,7 @@ export default function VerifyView() {
     wasRevealed.current = false;
     return (
       <div className="h-full overflow-y-auto">
-        <div className="mx-auto max-w-[1120px] px-8 py-8">
+        <div className="mx-auto max-w-[1120px] px-4 py-5 desk:px-8 desk:py-8">
           {state.busy === "restore" ? (
             <div className="flex h-64 items-center justify-center gap-2 text-sm text-ink-muted">
               <Spinner /> Restoring your verification…
@@ -88,12 +88,12 @@ export default function VerifyView() {
 
   return (
     <div ref={scrollRef} className="relative h-full overflow-y-auto">
-      <div className="sticky top-0 z-10 bg-gradient-to-b from-canvas via-canvas/95 to-canvas/0 px-8 pb-3 pt-5">
+      <div className="sticky top-0 z-10 bg-gradient-to-b from-canvas via-canvas/95 to-canvas/0 px-4 pb-2.5 pt-3 desk:px-8 desk:pb-3 desk:pt-5">
         <div className="mx-auto max-w-[1120px]">
           <ProgressStepper session={session} />
         </div>
       </div>
-      <div className="mx-auto max-w-[1120px] space-y-5 px-8 pb-10 pt-1">
+      <div className="mx-auto max-w-[1120px] space-y-4 px-4 pb-8 pt-1 desk:space-y-5 desk:px-8 desk:pb-10">
         {session.report && <ReportSummary session={session} />}
         <SessionHeader session={session} />
         <CollateralPhotos session={session} />

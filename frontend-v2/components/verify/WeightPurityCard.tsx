@@ -68,7 +68,7 @@ function Reconciliation({ session }: { session: SessionView }) {
 
   return (
     <div className="space-y-2.5">
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-2.5 sm:grid-cols-3">
         <Tile
           icon="gem"
           label="Per ornament"
@@ -184,7 +184,7 @@ function MeasurePrompt({ session }: { session: SessionView }) {
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease }}
-      className="flex flex-wrap items-center gap-4 rounded-xl border border-gold-200 bg-cream px-5 py-4"
+      className="flex flex-wrap items-center gap-3 rounded-xl border border-gold-200 bg-cream px-4 py-3.5 desk:gap-4 desk:px-5 desk:py-4"
     >
       <span className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-surface text-brand-600 shadow-xs ring-1 ring-gold-200">
         <Icon name="cpu" size={24} />

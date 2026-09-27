@@ -74,7 +74,7 @@ export default function ScaleDialog({ open, onClose }: { open: boolean; onClose:
             alt="Weighing-machine photo"
             fallback="weighScale"
             rounded="rounded-xl"
-            className="aspect-[4/3] w-full"
+            className="aspect-[4/3] max-h-40 w-full desk:max-h-none"
             onClick={
               w.scale_asset_id
                 ? () =>

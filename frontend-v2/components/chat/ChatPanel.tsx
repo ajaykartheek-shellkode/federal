@@ -5,12 +5,15 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useVerification } from "@/components/providers/VerificationProvider";
 import Icon from "@/components/ui/Icon";
 import { cn } from "@/lib/format";
+import { useIsDesktop } from "@/lib/useMediaQuery";
 import ActionBar from "./ActionBar";
 import ExecCard from "./ExecCard";
 import { AgentAvatar, BotMessage, NoticeMessage, TypingIndicator, UserMessage } from "./Messages";
 
-export default function ChatPanel() {
+export default function ChatPanel({ showActions = true }: { showActions?: boolean } = {}) {
   const { state, session, send } = useVerification();
+  // Refocusing the composer on a phone pops the keyboard over the dashboard; only do it on desktop.
+  const desktop = useIsDesktop();
   const [text, setText] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -27,9 +30,9 @@ export default function ChatPanel() {
   }, [state.messages, state.runs, typing]);
 
   useEffect(() => {
-    if (!state.busy && !state.answering && !state.dialog) inputRef.current?.focus({ preventScroll: true });
+    if (desktop && !state.busy && !state.answering && !state.dialog) inputRef.current?.focus({ preventScroll: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refocus only when work finishes, not on dialog changes
-  }, [state.busy, state.answering, session?.session_id]);
+  }, [desktop, state.busy, state.answering, session?.session_id]);
 
   const onScroll = () => {
     const el = scrollRef.current;
@@ -45,8 +48,8 @@ export default function ChatPanel() {
   };
 
   return (
-    <aside aria-label="Verification Agent" className="flex min-h-0 w-[392px] shrink-0 flex-col border-l border-line bg-surface">
-      <div className="flex items-center gap-3 border-b border-line px-4 py-3.5">
+    <aside aria-label="Verification Agent" className="flex h-full min-h-0 w-full shrink-0 flex-col bg-surface desk:w-[392px] desk:border-l desk:border-line">
+      <div className="hidden items-center gap-3 border-b border-line px-4 py-3.5 desk:flex">
         <AgentAvatar size={34} />
         <div className="min-w-0 flex-1">
           <h2 className="text-sm font-bold text-ink">Verification Agent</h2>
@@ -75,14 +78,14 @@ export default function ChatPanel() {
         <AnimatePresence>{typing && <TypingIndicator key="typing" />}</AnimatePresence>
       </div>
 
-      <ActionBar />
+      {showActions && <ActionBar />}
 
       <form
         onSubmit={(e) => {
           e.preventDefault();
           submit();
         }}
-        className={cn("px-3 pb-3", session ? "pt-1" : "border-t border-line pt-3")}
+        className={cn("px-3 pb-3 pb-safe desk:pb-3", session ? "pt-1" : "border-t border-line pt-3")}
       >
         <div className="flex items-center gap-2 rounded-2xl border border-line-strong bg-surface py-1.5 pl-4 pr-1.5 transition-[border-color,box-shadow] focus-within:border-brand-500 focus-within:shadow-focus">
           <input

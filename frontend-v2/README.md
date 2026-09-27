@@ -1,9 +1,23 @@
 # GL Portal — Federal Bank gold loan collateral verification (frontend)
 
-A 3-column, AI-guided single-page app (navigation rail · verification dashboard · Verification
-Agent chat) that walks a branch assessor through gold-loan collateral verification, built to the
-ShellKode TDD v3.0 and styled in the Federal Bank identity. `/login` is the way in; everything else
-is behind the sign-in guard.
+An AI-guided app that walks a branch assessor through gold-loan collateral verification, built to
+the ShellKode TDD v3.0 and styled in the Federal Bank identity. `/login` is the way in; everything
+else is behind the sign-in guard.
+
+It runs the same journey on two shapes of screen, from one codebase:
+
+* **Desktop (≥1180px, the `desk:` breakpoint)** — three columns: navigation rail · verification
+  dashboard · Verification Agent chat.
+* **Phone and tablet (below it)** — one column with **Verify** and **Agent** as bottom tabs, the
+  current step's primary action pinned above them, and the rail folded into a slide-over menu. The
+  pledge list becomes one card per ornament (a seven-column table can't shrink), every dialog rises
+  as a bottom sheet, and **Capture** hands off to the phone's own camera app rather than the
+  desktop webcam viewfinder. The A4 report is scaled to fit whole, like a PDF preview, with
+  Download PDF one tap away.
+
+The phone is the natural device here: three of the five steps are photographs taken at the counter.
+Camera capture needs a secure origin, so it works on HTTPS (or `localhost`) and is disabled with an
+explanation on a plain-HTTP deployment.
 
 Runs on **:3001** and proxies `/api/*` to the FastAPI backend on **:8000**, so AWS credentials
 never reach the browser.
@@ -66,15 +80,15 @@ Deep links: `/?session=<id>` reopens a verification, `/?view=reports|history|set
 app/                      layout (Titillium Web), page, /login, /report/[sessionId]
 components/
   auth/                   SignInForm (the /login screen), RequireAuth guard
-  shell/                  AppShell, NavRail (account menu + sign out), TopBar, Federal Bank wordmark
+  shell/                  AppShell (picks the layout), MobileShell (tabs + menu), NavRail (account menu + sign out), TopBar, Federal Bank wordmark
   providers/              AuthProvider — signed-in staff; VerificationProvider — session controller (start, steps over SSE, overrides, restore)
   chat/                   ChatPanel, ExecCard (live agent steps), Messages, ActionBar
   verify/                 dashboard cards: stepper, customer header, photos, weight & purity, inventory, pledge valuation, documents, report summary, audit
   dialogs/                collateral / damage / document uploads, camera capture, override & edit, scale reading, lightbox
-  report/                 printable ReportDocument, overlay, signature pads
+  report/                 printable ReportDocument, ScaledPage (fits A4 to a phone), overlay, signature pads
   views/                  Reports, History, Settings
   ui/                     design-system primitives (Button, Badge, Card, Dialog, Field, Thumb, Toasts…)
-lib/                      api client + SSE parser, types, reducer, intents, formatting, safe rich text, motion presets
+lib/                      api client + SSE parser, types, reducer, intents, formatting, safe rich text, motion presets, useMediaQuery
 ```
 
 ## Theme
