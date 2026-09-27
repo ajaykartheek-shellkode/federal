@@ -112,7 +112,9 @@ export default function SignInForm() {
           variants={fadeUp}
           initial="hidden"
           animate="show"
-          className="w-full max-w-[400px] flex-1 self-center px-6 pb-10 pt-8 lg:px-0 lg:pb-0 lg:pt-0"
+          // my-auto centres the card in whatever height is left — below the hero on a phone,
+          // in the whole column on a desktop. flex-1 stretched it and pinned the form to the top.
+          className="my-auto w-full max-w-[400px] self-center px-6 py-10 lg:px-0 lg:py-0"
         >
 
           <h2 className="text-[26px] font-bold leading-tight text-ink">Sign in</h2>
