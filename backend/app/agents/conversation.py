@@ -40,7 +40,10 @@ JOURNEY = (
     '5) identity documents are cross-verified against the CBS customer record; 6) the report is '
     'generated. A fresh loan runs under a loan APPLICATION reference and has no gold loan account '
     'number until the report recommends PROCEED, at which point the account is created; a renewal '
-    'or release verifies a loan account that already exists.'
+    'or release verifies a loan account that already exists. The assessor can GO BACK to any step they '
+    'have already passed, and removing a collateral photo takes the ornaments it listed with it and '
+    'returns the journey to the collateral capture — when that happens, say what was discarded and '
+    'what to do next; never refer to evidence that has been removed.'
 )
 
 
@@ -196,6 +199,31 @@ def draft(step: str, f: dict) -> str:
             f"Recorded damage for <strong>{_names(recorded)}</strong>{status_part}.{noted} "
             f"It is noted on the report and does not reduce the loan amount. "
             f"Record more, or continue to the {f.get('next_label') or 'documents'}."
+        )
+
+    if step == "photo_removed":
+        dropped = f.get("removed") or []
+        left = f.get("photos_left", 0)
+        head = f"Removed <strong>{f.get('photo') or 'that photo'}</strong>"
+        if dropped:
+            head += f" and the <strong>{len(dropped)} ornament(s)</strong> it listed ({_names(dropped)})"
+        if not f.get("rewound"):
+            return f"{head}. The rest of the pledge list is untouched — carry on where you were."
+        lost = " The machine total and the assay went with it, since they were taken across the whole tray." if f.get("had_weights") else ""
+        nxt = (
+            "Upload a fresh collateral photo to rebuild the list."
+            if left == 0
+            else f"<strong>{left} photo(s)</strong> remain — upload a replacement capture, or continue with what is listed."
+        )
+        report = " The report has been discarded and will be regenerated." if f.get("report_discarded") else ""
+        return f"{head}, so we're back at the <strong>collateral photos</strong>.{lost}{report} {nxt}"
+
+    if step == "rewound":
+        labels = f.get("labels") or []
+        lost = f" I've discarded {_names(labels, limit=4)}." if labels else ""
+        return (
+            f"Back at <strong>{f.get('label') or f.get('target')}</strong>.{lost} "
+            f"{f.get('next_action') or 'Redo this step when you are ready.'}"
         )
 
     if step == "document_prompt":

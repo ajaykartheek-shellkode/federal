@@ -11,6 +11,7 @@ import {
   getSession,
   overrideFinding,
   removeCollateralPhoto,
+  rewindTo,
   removeInventoryItem,
   submitReport as submitReportApi,
   setItemWeight,
@@ -44,6 +45,7 @@ interface VerificationApi {
   addItem: (item: NewItem) => Promise<boolean>;
   removeItem: (ref: string, justification: string) => Promise<boolean>;
   removePhoto: (index: number) => Promise<boolean>;
+  goBackTo: (target: string) => Promise<boolean>;
   submitReport: (signatures: SignaturePayload[]) => Promise<boolean>;
   resume: (sessionId: string) => Promise<void>;
   revealItems: () => void;
@@ -379,7 +381,16 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
           const res = await removeCollateralPhoto(session.session_id, index);
           setSession(res.session);
           const dropped = res.removed_ornaments.length;
-          toast("ok", dropped ? `Photo removed · ${plural(dropped, "ornament")} taken off the list` : "Photo removed");
+          toast(
+            res.rewound ? "info" : "ok",
+            res.rewound
+              ? `Photo removed · back at the collateral capture`
+              : dropped
+                ? `Photo removed · ${plural(dropped, "ornament")} taken off the list`
+                : "Photo removed"
+          );
+          // The chat must never describe evidence that has just left the session.
+          bot(res.message);
           ok = true;
         } catch (err) {
           handleApiError(err, "Removing the photo");
@@ -387,7 +398,30 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
       });
       return ok;
     },
-    [exclusive, handleApiError, setSession, toast]
+    [bot, exclusive, handleApiError, setSession, toast]
+  );
+
+  /** Go back to a step already passed, discarding what that step produced so it can be redone. */
+  const goBackTo = useCallback(
+    async (target: string) => {
+      const session = sessionRef.current;
+      if (!session) return false;
+      let ok = false;
+      await exclusive("mutate", async () => {
+        try {
+          const res = await rewindTo(session.session_id, target);
+          setSession(res.session);
+          dispatch({ type: "view", view: "verify" });
+          toast("info", "Stepped back — redo this step when you are ready");
+          bot(res.message);
+          ok = true;
+        } catch (err) {
+          handleApiError(err, "Going back");
+        }
+      });
+      return ok;
+    },
+    [bot, exclusive, handleApiError, setSession, toast]
   );
 
   const submitReport = useCallback(
@@ -440,6 +474,7 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
       addItem,
       removeItem,
       removePhoto,
+      goBackTo,
       submitReport,
       revealItems,
       resume,
@@ -450,7 +485,7 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
       toast,
       dismissToast: (id) => dispatch({ type: "dismiss-toast", id }),
     }),
-    [state, start, runStep, send, override, editItem, setScaleReading, setWeight, addItem, removeItem, removePhoto, submitReport, revealItems, resume, reset, toast]
+    [state, start, runStep, send, override, editItem, setScaleReading, setWeight, addItem, removeItem, removePhoto, goBackTo, submitReport, revealItems, resume, reset, toast]
   );
 
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;

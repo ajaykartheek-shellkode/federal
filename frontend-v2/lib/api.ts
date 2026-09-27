@@ -154,12 +154,26 @@ export interface NewItem {
 export const addInventoryItem = (sessionId: string, item: NewItem) =>
   request<{ session: SessionView }>("/api/chat/item", json("POST", { session_id: sessionId, ...item }));
 
-/** Drop a collateral photo the assessor is re-taking, with the ornaments only it produced. */
+/** Drop a collateral photo the assessor is re-taking, with the ornaments it listed. */
 export const removeCollateralPhoto = (sessionId: string, index: number) =>
-  request<{ session: SessionView; removed_ornaments: string[] }>(
+  request<{ session: SessionView; removed_ornaments: string[]; rewound: boolean; message: string }>(
     "/api/chat/collateral/remove",
     json("POST", { session_id: sessionId, index })
   );
+
+export interface RewindEffects {
+  target: string;
+  clears: string[];
+  labels: string[];
+  counts: Record<string, number>;
+}
+
+/** What going back to a step would discard — shown before the assessor confirms. */
+export const previewRewind = (sessionId: string, target: string) =>
+  request<RewindEffects>(`/api/chat/rewind/${encodeURIComponent(sessionId)}/${encodeURIComponent(target)}`);
+
+export const rewindTo = (sessionId: string, target: string) =>
+  request<{ session: SessionView; message: string }>("/api/chat/rewind", json("POST", { session_id: sessionId, target }));
 
 export const removeInventoryItem = (sessionId: string, ref: string, justification = "") =>
   request<{ session: SessionView }>("/api/chat/item/remove", json("POST", { session_id: sessionId, ref, justification }));

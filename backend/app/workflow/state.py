@@ -525,27 +525,125 @@ def record_collateral(state: dict, images: List[dict], result: Optional[dict]) -
     return added
 
 
-def remove_collateral_image(state: dict, index: int) -> dict:
-    """Drop one collateral photo from the session — a capture the assessor is re-taking.
+# --------------------------------------------------------------------------- going back
+# What redoing a step throws away. A step's own output goes, and the report always goes with it —
+# it summarises the whole verification. Nothing else is touched: a damage close-up does not depend
+# on the weighing, and an Aadhaar card does not depend on either.
+REWIND_CLEARS: Dict[str, tuple] = {
+    "collateral": ("photos", "inventory", "scale", "measurements", "weights", "damages", "documents"),
+    "weight": ("scale", "measurements", "weights"),
+    "damage": ("damages",),
+    "valuation": (),
+    "document": ("documents",),
+    "report": (),
+}
 
-    The ornaments it produced go with it, unless they have since been weighed or assayed (that is
-    the assessor's work, not the photo's). Remaining photos keep their upload numbers and are
-    re-indexed so the list stays contiguous.
+CLEAR_LABELS = {
+    "photos": "the collateral photos",
+    "inventory": "the pledge list",
+    "scale": "the weighing-machine total",
+    "measurements": "the Karatometer assay",
+    "weights": "every ornament's weight",
+    "damages": "the damage records",
+    "documents": "the verified documents",
+    "report": "the report",
+}
+
+
+def require_unsubmitted(state: dict) -> None:
+    """Editing stops at submission, not at the report: an unsigned report can still be redone."""
+    if (state.get("report") or {}).get("submitted_at"):
+        raise WorkflowError("This verification has been submitted and can no longer be changed.")
+
+
+def _clear_outputs(state: dict, what: Iterable[str]) -> None:
+    what = set(what)
+    if "photos" in what:
+        state["collateral"] = {"images": [], "overall_status": None, "issues": [], "corrective_actions": [], "detections": 0}
+    if "inventory" in what:
+        state["inventory"] = []
+    if "scale" in what:
+        state["scale"], state["scale_overridden"] = None, False
+    if "measurements" in what:
+        state["measurements"] = None
+        for row in state["inventory"]:
+            row["measurement"], row["measurement_status"], row["measurement_overridden"] = None, "pending", False
+            row["carat"] = ""
+    if "weights" in what:
+        for row in state["inventory"]:
+            row["weight_gm"], row["weight_source"], row["weight_basis"] = 0.0, "", ""
+    if "damages" in what:
+        state["damages"] = []
+        for row in state["inventory"]:
+            row["damaged"] = False
+    if "documents" in what:
+        state["documents"] = None
+    if "report" in what:
+        state["report"], state["signatures"] = None, []
+
+
+def rewind_effects(state: dict, target: str) -> dict:
+    """What going back to ``target`` would discard, for the confirmation the assessor sees."""
+    clears = set(REWIND_CLEARS.get(target, ())) | ({"report"} if state.get("report") else set())
+    inv = state["inventory"]
+    counts = {
+        "photos": len(state["collateral"]["images"]) if "photos" in clears else 0,
+        "scale": 1 if "scale" in clears and state.get("scale") else 0,
+        "inventory": len(inv) if "inventory" in clears else 0,
+        "weights": sum(1 for r in inv if float(r.get("weight_gm") or 0) > 0) if "weights" in clears else 0,
+        "measurements": sum(1 for r in inv if r.get("measurement")) if "measurements" in clears else 0,
+        "damages": len(state["damages"]) if "damages" in clears else 0,
+        "documents": len(document_items(state)) if "documents" in clears else 0,
+        "report": 1 if "report" in clears else 0,
+    }
+    return {
+        "target": target,
+        "clears": [k for k in CLEAR_LABELS if k in clears and counts.get(k, 0)],
+        "counts": counts,
+        "labels": [CLEAR_LABELS[k] for k in CLEAR_LABELS if k in clears and counts.get(k, 0)],
+    }
+
+
+def rewind(state: dict, target: str) -> dict:
+    """Go back to an earlier step, discarding what that step produced so it can be redone."""
+    require_unsubmitted(state)
+    steps = steps_of(state)
+    if target not in steps:
+        raise WorkflowError("That step is not part of this verification.")
+    current = state["workflow_state"]
+    at = len(steps) if current == "done" else steps.index(current)
+    if steps.index(target) >= at:
+        raise WorkflowError("You can only go back to a step you have already passed.")
+
+    effects = rewind_effects(state, target)
+    _clear_outputs(state, set(REWIND_CLEARS[target]) | {"report"})
+    state["workflow_state"] = target
+    entry = _audit_entry(
+        "workflow", target, "Verification step",
+        f"at {current}", f"back to {target}" + (f" · discarded {', '.join(effects['labels'])}" if effects["labels"] else ""),
+        "",
+    )
+    state["audit"].append(entry)
+    return {"entry": entry, **effects}
+
+
+def remove_collateral_image(state: dict, index: int) -> dict:
+    """Drop one collateral photo — a capture the assessor is re-taking.
+
+    The photo is the evidence the pledge list stands on, so its ornaments go with it, weighed and
+    assayed or not: a list with no photograph behind it cannot be put to an approving officer, and
+    leaving it would double up the moment a fresh capture is uploaded. If anything was listed from
+    this photo the journey steps back to the collateral capture, and the report goes with it.
     """
-    require_open(state)
+    require_unsubmitted(state)
     images = state["collateral"]["images"]
     target = next((im for im in images if int(im.get("index", -1)) == int(index)), None)
     if target is None:
         raise WorkflowError("That photo is not part of this verification.")
 
     kept = [im for im in images if im is not target]
-    dropped_ornaments = [
-        r for r in state["inventory"]
-        if r.get("source_image") == target.get("index")
-        and not float(r.get("weight_gm") or 0) > 0
-        and not r.get("measurement")
-    ]
-    dropped_ids = {r["id"] for r in dropped_ornaments}
+    dropped = [r for r in state["inventory"] if r.get("source_image") == target.get("index")]
+    dropped_ids = {r["id"] for r in dropped}
     state["inventory"] = [r for r in state["inventory"] if r["id"] not in dropped_ids]
     state["damages"] = [d for d in state["damages"] if d["ornament_id"] not in dropped_ids]
 
@@ -559,12 +657,31 @@ def remove_collateral_image(state: dict, index: int) -> dict:
             row["source_image"] = moved[row["source_image"]]
     state["collateral"]["images"] = kept
 
+    # The machine total and the assay were taken across the whole tray, so they no longer describe
+    # what is on the list. Re-shoot the machine photo and re-assay what remains.
+    needs_recapture = bool(dropped) or not kept
+    had_report = bool(state.get("report"))
+    rewound = needs_recapture and state["workflow_state"] != "collateral"
+    if needs_recapture:
+        _clear_outputs(state, ("scale", "measurements", "weights", "report"))
+        state["workflow_state"] = "collateral"
+    elif had_report:
+        _clear_outputs(state, ("report",))
+        state["workflow_state"] = "report"
+
+    detail = f"removed by the assessor · {len(dropped)} ornament(s) taken off the list" if dropped else "removed by the assessor"
     entry = _audit_entry(
         "collateral", str(index), target.get("filename") or f"Photo {int(index) + 1}",
-        f"{target.get('status', 'not_checked')} capture", "removed by the assessor", "",
+        f"{target.get('status', 'not_checked')} capture", detail, "",
     )
     state["audit"].append(entry)
-    return {"entry": entry, "removed_ornaments": [r["name"] for r in dropped_ornaments]}
+    return {
+        "entry": entry,
+        "removed_ornaments": [r["name"] for r in dropped],
+        "rewound": rewound,
+        "report_discarded": had_report,
+        "photos_left": len(kept),
+    }
 
 
 def collateral_complete(state: dict) -> bool:

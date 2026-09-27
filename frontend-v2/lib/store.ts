@@ -32,6 +32,7 @@ export type DialogState =
   | { kind: "add-item" }
   | { kind: "remove-item"; ref: string }
   | { kind: "remove-photo"; index: number }
+  | { kind: "rewind"; target: string }
   | { kind: "scale" }
   | { kind: "scale-photo" }
   | { kind: "lightbox"; src: string; title: string; contentType?: string; caption?: string }

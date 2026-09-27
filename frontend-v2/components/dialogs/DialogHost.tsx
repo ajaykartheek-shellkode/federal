@@ -6,6 +6,7 @@ import ReportOverlay from "@/components/report/ReportOverlay";
 import type { DialogState } from "@/lib/store";
 import { EditItemDialog, NewSessionDialog, OverrideDialog } from "./AuditDialogs";
 import { AddItemDialog, RemoveItemDialog, RemovePhotoDialog, ScalePhotoDialog } from "./InventoryDialogs";
+import RewindDialog from "./RewindDialog";
 import CollateralDialog from "./CollateralDialog";
 import DamageDialog from "./DamageDialog";
 import DocumentDialog from "./DocumentDialog";
@@ -37,6 +38,7 @@ export default function DialogHost() {
       <ScaleDialog open={is("scale")} onClose={closeDialog} />
       <ScalePhotoDialog open={is("scale-photo")} onClose={closeDialog} />
       <RemovePhotoDialog open={is("remove-photo")} index={dialog?.kind === "remove-photo" ? dialog.index : -1} onClose={closeDialog} />
+      <RewindDialog open={is("rewind")} target={dialog?.kind === "rewind" ? dialog.target : ""} onClose={closeDialog} />
       <AddItemDialog open={is("add-item")} onClose={closeDialog} />
       {removeItem && <RemoveItemDialog open={is("remove-item")} refId={removeItem.ref} onClose={closeDialog} />}
       <NewSessionDialog open={is("new-session")} onClose={closeDialog} />

@@ -166,29 +166,102 @@ def test_apportioned_weights_can_be_replaced_without_a_justification(client, fak
     assert ok.status_code == 200 and len(ok.json()["session"]["audit"]) == 1
 
 
-def test_a_failed_collateral_photo_can_be_removed(client, fake_bedrock):
-    """A capture the assessor is re-taking leaves the session entirely — photo and all."""
+def test_removing_a_collateral_photo_rewinds_the_journey(client, fake_bedrock):
+    """The photo is the evidence the list stands on: pulling it takes the ornaments and the assay."""
     fake_bedrock.collateral_status = "fail"
     sid = start(client)["session_id"]
     _, _, s = step(client, sid, "collateral", files=[("collateral_images", photo())])
     assert len(s["collateral"]["images"]) == 1 and s["collateral"]["images"][0]["status"] == "fail"
     assert s["inventory"] == []  # an unusable photo never lists anything
 
+    # A capture that listed nothing takes nothing with it, and the journey stays put.
     res = client.post("/api/chat/collateral/remove", json={"session_id": sid, "index": 0})
     assert res.status_code == 200, res.text
-    s = res.json()["session"]
-    assert s["collateral"]["images"] == []
-    assert s["audit"][-1]["target"] == "collateral" and "removed" in s["audit"][-1]["new_value"]
+    body = res.json()
+    assert body["session"]["collateral"]["images"] == [] and body["rewound"] is False
+    assert "untouched" in body["message"]
+    assert body["session"]["audit"][-1]["target"] == "collateral"
     assert client.post("/api/chat/collateral/remove", json={"session_id": sid, "index": 0}).status_code == 409
 
-    # A usable capture lists ornaments; removing it takes the unweighed ones with it.
+    # Now a usable capture, weighed and assayed all the way to the report.
     fake_bedrock.collateral_status = "pass"
-    _, _, s = step(client, sid, "collateral", files=[("collateral_images", photo())])
-    assert [r["id"] for r in s["inventory"]] == ["item-1", "item-2", "item-3"]
-    weigh(client, sid, {"item-1": 10})
+    fake_bedrock.scale_weight_g = 33.0
+    step(client, sid, "collateral", files=[("collateral_images", photo())])
+    step(client, sid, "scale_photo", files=[("scale_image", photo("scale.png"))])
+    _, _, s = step(client, sid, "measure")
+    assert s["workflow_state"] == "damage" and s["stats"]["measured"] == 3
+
     body = client.post("/api/chat/collateral/remove", json={"session_id": sid, "index": 0}).json()
-    assert [r["id"] for r in body["session"]["inventory"]] == ["item-1"]  # the weighed one stays
-    assert sorted(body["removed_ornaments"]) == ["Gold Bangle", "Gold Ring"]
+    s = body["session"]
+    assert body["rewound"] is True
+    assert s["workflow_state"] == "collateral"          # back to the capture
+    assert s["inventory"] == []                          # every ornament went with the photo
+    assert s["measurements"] is None and s["scale"] is None
+    assert sorted(body["removed_ornaments"]) == ["Gold Bangle", "Gold Chain", "Gold Ring"]
+    assert "back at the" in body["message"] and "collateral photos" in body["message"]
+    assert "ornament(s) taken off the list" in s["audit"][-1]["new_value"]
+
+    # A fresh capture rebuilds the list from scratch — no duplicates left behind.
+    _, _, s = step(client, sid, "collateral", files=[("collateral_images", photo())])
+    assert len(s["inventory"]) == 3
+
+
+def test_going_back_to_a_step_discards_only_what_that_step_produced(client, fake_bedrock):
+    fake_bedrock.scale_weight_g = 33.0
+    sid = start(client)["session_id"]
+    step(client, sid, "collateral", files=[("collateral_images", photo())])
+    step(client, sid, "scale_photo", files=[("scale_image", photo("scale.png"))])
+    step(client, sid, "measure")
+    hints = [{"ornament_id": "item-1", "type": "Dent", "severity": "minor", "details": "Dent", "photo": False}]
+    step(client, sid, "damage", damage_hints=json.dumps(hints))
+    step(client, sid, "continue")  # damage -> valuation
+    step(client, sid, "continue")  # valuation -> document
+    step(client, sid, "document", files=[("documents", photo())], document_types=json.dumps(["Aadhaar Card"]))
+    _, _, s = step(client, sid, "report")
+    assert s["workflow_state"] == "done"
+
+    # The preview says exactly what would go before anything is touched.
+    preview = client.get(f"/api/chat/rewind/{sid}/weight").json()
+    assert set(preview["clears"]) == {"scale", "measurements", "weights", "report"}
+    assert preview["counts"]["measurements"] == 3
+
+    res = client.post("/api/chat/rewind", json={"session_id": sid, "target": "weight"})
+    assert res.status_code == 200, res.text
+    s = res.json()["session"]
+    assert s["workflow_state"] == "weight"
+    assert s["scale"] is None and s["measurements"] is None and s["report"] is None
+    assert all(r["weight_gm"] == 0 and r["measurement"] is None for r in s["inventory"])
+    # The pledge list, the damage record and the documents do not depend on the weighing.
+    assert len(s["inventory"]) == 3 and len(s["damages"]) == 1
+    assert s["documents"] is not None
+    assert "Weight & purity" in res.json()["message"]
+    assert s["audit"][-1]["target"] == "workflow" and "back to weight" in s["audit"][-1]["new_value"]
+
+    # Forwards is not a rewind, and an unknown step is refused.
+    assert client.post("/api/chat/rewind", json={"session_id": sid, "target": "report"}).status_code == 409
+    assert client.post("/api/chat/rewind", json={"session_id": sid, "target": "nowhere"}).status_code == 409
+
+
+def test_a_submitted_verification_can_no_longer_be_changed(client, fake_bedrock):
+    fake_bedrock.scale_weight_g = 33.0
+    sid = start(client)["session_id"]
+    step(client, sid, "collateral", files=[("collateral_images", photo())])
+    step(client, sid, "scale_photo", files=[("scale_image", photo("scale.png"))])
+    step(client, sid, "measure")
+    step(client, sid, "continue")
+    step(client, sid, "continue")
+    step(client, sid, "document", files=[("documents", photo())], document_types=json.dumps(["Aadhaar Card"]))
+    step(client, sid, "report")
+    client.post("/api/chat/submit", json={
+        "session_id": sid, "signatures": [{"role": "customer", "name": "Rajesh Kumar", "kind": "drawn"}],
+    })
+
+    for call in (
+        ("/api/chat/rewind", {"session_id": sid, "target": "weight"}),
+        ("/api/chat/collateral/remove", {"session_id": sid, "index": 0}),
+    ):
+        res = client.post(call[0], json=call[1])
+        assert res.status_code == 409 and "submitted" in res.json()["error"]
 
 
 def test_the_report_is_submitted_once_the_customer_signs(client, fake_bedrock):

@@ -505,6 +505,26 @@ async def remove_item(body: ItemRefBody):
     return await _mutate(body.session_id, lambda st: S.remove_item(st, body.ref, body.justification))
 
 
+# What each step is called, and what the assessor does next after going back to it.
+STEP_LABELS = [
+    {"key": "collateral", "label": "Collateral photos"},
+    {"key": "weight", "label": "Weight & purity"},
+    {"key": "damage", "label": "Damage assessment"},
+    {"key": "valuation", "label": "Loan valuation"},
+    {"key": "document", "label": "Document verification"},
+    {"key": "report", "label": "Report"},
+]
+
+REDO_PROMPT = {
+    "collateral": "Upload the collateral photos again to rebuild the pledge list.",
+    "weight": "Upload the weighing-machine photo again, then fetch the purity.",
+    "damage": "Record the damaged ornaments again, or continue without any.",
+    "valuation": "Review the maximum loan amount, then continue.",
+    "document": "Upload the customer's documentary proof again.",
+    "report": "Generate the report when you are ready.",
+}
+
+
 class PhotoRefBody(BaseModel):
     session_id: str
     index: int = Field(ge=0, le=99)
@@ -512,17 +532,66 @@ class PhotoRefBody(BaseModel):
 
 @router.post("/collateral/remove")
 async def remove_collateral_photo(body: PhotoRefBody):
-    """Drop a collateral photo the assessor is re-taking, with the ornaments only it produced."""
+    """Drop a collateral photo the assessor is re-taking, with the ornaments it listed."""
     result: Dict[str, Any] = {}
 
     def apply(st: dict):
+        had_weights = bool(st.get("measurements")) or any(float(r.get("weight_gm") or 0) > 0 for r in st["inventory"])
         out = S.remove_collateral_image(st, body.index)
-        result.update(out)
+        result.update(out, had_weights=had_weights, photo=f"Photo {body.index + 1}")
         return out["entry"]
 
     res = await _mutate(body.session_id, apply)
     if isinstance(res, dict):
         res["removed_ornaments"] = result.get("removed_ornaments", [])
+        res["rewound"] = result.get("rewound", False)
+        res["message"] = conversation.draft("photo_removed", {
+            "photo": result.get("photo"),
+            "removed": result.get("removed_ornaments", []),
+            "photos_left": result.get("photos_left", 0),
+            "rewound": result.get("rewound", False),
+            "had_weights": result.get("had_weights", False),
+            "report_discarded": result.get("report_discarded", False),
+        })
+    return res
+
+
+class RewindBody(BaseModel):
+    session_id: str
+    target: str = Field(max_length=24)
+
+
+@router.get("/rewind/{session_id}/{target}")
+async def rewind_preview(session_id: str, target: str):
+    """What going back to ``target`` would discard — shown before the assessor confirms."""
+    try:
+        state = await _load(session_id)
+    except ApiError as exc:
+        return exc.response()
+    if target not in S.steps_of(state):
+        return ApiError(400, "That step is not part of this verification.").response()
+    return S.rewind_effects(state, target)
+
+
+@router.post("/rewind")
+async def rewind(body: RewindBody):
+    """Go back to a step already passed, discarding what that step produced so it can be redone."""
+    result: Dict[str, Any] = {}
+
+    def apply(st: dict):
+        out = S.rewind(st, body.target)
+        result.update(out)
+        return out["entry"]
+
+    res = await _mutate(body.session_id, apply)
+    if isinstance(res, dict):
+        label = next((s["label"] for s in STEP_LABELS if s["key"] == body.target), body.target)
+        res["message"] = conversation.draft("rewound", {
+            "target": body.target,
+            "label": label,
+            "labels": result.get("labels", []),
+            "next_action": REDO_PROMPT.get(body.target, "Redo this step when you are ready."),
+        })
     return res
 
 

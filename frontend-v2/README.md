@@ -77,6 +77,11 @@ Other views: **Reports** (7-day outcomes, by date, by loan account — with thum
 reasons), **History** (reopen any past verification), **Settings** (AI per scenario, enforcement
 mode, thresholds, the loan rate and wastage, purity grades per material and weight/purity tolerances).
 
+**Going back.** Every completed step in the stepper is a button: it opens a confirmation listing what
+that step produced and will discard, then rewinds, tells the agent, and writes an audit entry. On a
+phone the same control sits under the progress bar. Removing a collateral photo rewinds to the
+capture and takes its ornaments, weights and assay with it. A submitted verification is locked.
+
 Deep links: `/?session=<id>` reopens a verification, `/?view=reports|history|settings` opens a view.
 
 ## Structure
@@ -89,7 +94,7 @@ components/
   providers/              AuthProvider — signed-in staff; VerificationProvider — session controller (start, steps over SSE, overrides, restore)
   chat/                   ChatPanel, ExecCard (live agent steps), Messages, ActionBar
   verify/                 dashboard cards: stepper, customer header, photos, weight & purity, inventory, pledge valuation, documents, report summary, audit
-  dialogs/                collateral / damage / document uploads, camera capture, override & edit, scale reading, lightbox
+  dialogs/                collateral / damage / document uploads, camera capture, override & edit, scale reading, remove photo, go back, lightbox
   report/                 printable ReportDocument, ScaledPage (fits A4 to a phone), overlay, signature pads
   views/                  Reports, History, Settings
   ui/                     design-system primitives (Button, Badge, Card, Dialog, Field, Thumb, Toasts…)

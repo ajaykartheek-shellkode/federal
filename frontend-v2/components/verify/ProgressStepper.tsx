@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { useVerification } from "@/components/providers/VerificationProvider";
 import { Badge } from "@/components/ui/Badge";
 import Icon from "@/components/ui/Icon";
 import { cn, WORKFLOW_STEPS } from "@/lib/format";
@@ -8,6 +9,9 @@ import { ease } from "@/lib/motion";
 import type { SessionView } from "@/lib/types";
 
 export default function ProgressStepper({ session }: { session: SessionView }) {
+  const { openDialog, state } = useVerification();
+  // A submitted verification is the record of what happened; nothing goes back from there.
+  const locked = !!session.report?.submitted_at || !!state.busy;
   // Sessions created before the Weight & purity step run four steps.
   const keys: string[] = session.steps ?? WORKFLOW_STEPS.map((w) => w.key);
   const steps = WORKFLOW_STEPS.filter((s) => keys.includes(s.key));
@@ -37,6 +41,15 @@ export default function ProgressStepper({ session }: { session: SessionView }) {
             </span>
           </span>
         </div>
+        {at > 0 && !locked && (
+          <button
+            type="button"
+            onClick={() => openDialog({ kind: "rewind", target: steps[at - 1].key })}
+            className="mt-1.5 inline-flex items-center gap-1 text-2xs font-semibold text-brand-600"
+          >
+            <Icon name="refresh" size={11} /> Back to {steps[at - 1].label}
+          </button>
+        )}
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line">
           <motion.div
             className="h-full rounded-full bg-gradient-to-r from-ok via-ok to-gold-500"
@@ -60,20 +73,35 @@ export default function ProgressStepper({ session }: { session: SessionView }) {
         {steps.map((step, i) => {
           const done = i < current;
           const active = i === current;
+          // A step already passed can be gone back to, so it is a button; the rest are not.
+          const canGoBack = done && !locked;
+          const Marker = canGoBack ? "button" : "span";
           return (
             <li key={step.key} className="relative z-10 flex flex-col items-center gap-1.5" aria-current={active ? "step" : undefined}>
               <motion.span
                 initial={false}
                 animate={{ scale: active ? 1.08 : 1 }}
                 transition={{ type: "spring", stiffness: 500, damping: 26 }}
-                className={cn(
-                  "flex h-[33px] w-[33px] items-center justify-center rounded-full text-sm font-bold transition-colors duration-300",
-                  done && "bg-ok text-white",
-                  active && "animate-pulse-ring bg-gold-500 text-brand-900",
-                  !done && !active && "border-2 border-line-strong bg-surface text-ink-faint"
-                )}
               >
-                {done ? <Icon name="check" size={16} strokeWidth={3} /> : i + 1}
+                <Marker
+                  {...(canGoBack
+                    ? {
+                        type: "button" as const,
+                        onClick: () => openDialog({ kind: "rewind", target: step.key }),
+                        title: `Go back to ${step.label}`,
+                        "aria-label": `Go back to ${step.label}`,
+                      }
+                    : {})}
+                  className={cn(
+                    "flex h-[33px] w-[33px] items-center justify-center rounded-full text-sm font-bold transition-colors duration-300",
+                    done && "bg-ok text-white",
+                    canGoBack && "cursor-pointer hover:bg-brand-600 focus-visible:bg-brand-600",
+                    active && "animate-pulse-ring bg-gold-500 text-brand-900",
+                    !done && !active && "border-2 border-line-strong bg-surface text-ink-faint"
+                  )}
+                >
+                  {done ? <Icon name={canGoBack ? "refresh" : "check"} size={16} strokeWidth={3} /> : i + 1}
+                </Marker>
               </motion.span>
               <span className={cn("whitespace-nowrap text-xs", active ? "font-bold text-ink" : done ? "font-semibold text-ink-2" : "text-ink-muted")}>
                 {/* Six steps don't fit at full width — fall back to the short names. */}

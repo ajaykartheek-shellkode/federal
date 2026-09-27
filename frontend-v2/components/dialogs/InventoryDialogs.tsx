@@ -192,10 +192,10 @@ export function RemovePhotoDialog({ open, index, onClose }: { open: boolean; ind
   const image = session?.collateral.images.find((im) => im.index === index);
   if (!session || !image) return null;
   const busy = state.busy === "mutate";
-  // Ornaments already weighed or assayed are the assessor's work; they stay on the list.
-  const going = session.inventory.filter(
-    (r) => r.source_image === image.index && !(r.weight_gm > 0) && !r.measurement
-  );
+  // The photo is the evidence the list stands on, so everything it listed goes with it.
+  const going = session.inventory.filter((r) => r.source_image === image.index);
+  const rewinds = going.length > 0 || session.collateral.images.length === 1;
+  const weighed = session.weight.entered_g > 0 || !!session.measurements;
 
   const submit = async () => {
     if (await removePhoto(image.index)) onClose();
@@ -208,7 +208,7 @@ export function RemovePhotoDialog({ open, index, onClose }: { open: boolean; ind
       size="sm"
       icon="trash"
       title="Remove this photo"
-      subtitle="It leaves the verification and the report"
+      subtitle="It leaves the verification, and so does what it listed"
       dismissable={!busy}
       footer={
         <>
@@ -233,13 +233,16 @@ export function RemovePhotoDialog({ open, index, onClose }: { open: boolean; ind
         {going.length > 0 && (
           <p className="flex items-start gap-2 rounded-xl bg-warn-soft px-3 py-2 text-xs text-warn">
             <Icon name="alert" size={14} className="mt-px shrink-0" />
-            {plural(going.length, "ornament")} listed only from this photo will be removed too:{" "}
+            The {plural(going.length, "ornament")} this photo listed go with it:{" "}
             {going.map((r) => r.name).join(", ")}.
+            {weighed && " Their weights and the Karatometer assay go too — both were taken across the whole tray."}
           </p>
         )}
         <p className="flex items-start gap-2 rounded-xl bg-brand-50 px-3 py-2 text-xs text-brand-700">
           <Icon name="info" size={14} className="mt-px shrink-0" />
-          Recorded in the audit trail. Upload a fresh capture when you have re-taken it.
+          {rewinds
+            ? "The journey goes back to the collateral capture so you can upload a fresh photo. Recorded in the audit trail."
+            : "Recorded in the audit trail. The rest of the pledge list is untouched."}
         </p>
       </div>
     </Dialog>
