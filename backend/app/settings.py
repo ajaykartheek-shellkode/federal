@@ -8,7 +8,7 @@ Validation
 * doc_match_threshold_pct   — document address similarity below this is flagged
 
 Measurement & valuation (captured when a session starts, so a verification is valued consistently)
-* rate_per_gram, wastage_pct — the loan amount: net weight (gross less wastage) × rate per gram
+* schemes, wastage_pct     — the loan amount: net weight (gross less wastage) × the scheme's rate
 * valuation                 — materials (gold, silver, …) and the purity grades a fineness maps to
                               (fineness % and rate per gram)
 * weight_tolerance_g        — measured vs declared weight difference allowed per ornament
@@ -35,7 +35,6 @@ BOUNDS: Dict[str, tuple] = {
     "doc_match_threshold_pct": (50, 100),
     "weight_tolerance_g": (0.0, 5.0),
     "purity_tolerance_pct": (0.0, 5.0),
-    "rate_per_gram": (0.0, 1_000_000.0),
     "wastage_pct": (0.0, 25.0),
 }
 
@@ -102,6 +101,36 @@ def default_valuation() -> Valuation:
     ])
 
 
+LoanType = Literal["ODA", "LAA", "CCA"]
+LoanCategory = Literal["GGL", "KGL", "IGL"]
+
+
+class LoanScheme(BaseModel):
+    """One lending scheme: what it is called, where it sits, and what it pays per gram."""
+
+    name: str = Field(min_length=1, max_length=60)
+    loan_type: LoanType
+    loan_category: LoanCategory
+    tenure_months: int = Field(ge=1, le=360)
+    rate_per_gram: float = Field(ge=0, le=1_000_000)
+
+
+def default_schemes() -> List[LoanScheme]:
+    """Federal Bank's scheme grid. Type × category decides which schemes a branch may pick."""
+    return [
+        LoanScheme(name="Digi Gold", loan_type="ODA", loan_category="GGL", tenure_months=36, rate_per_gram=9000),
+        LoanScheme(name="Digi Gold - NRI", loan_type="ODA", loan_category="GGL", tenure_months=36, rate_per_gram=9000),
+        LoanScheme(name="GGL - MINT", loan_type="LAA", loan_category="GGL", tenure_months=48, rate_per_gram=10200),
+        LoanScheme(name="GGL - QINT", loan_type="LAA", loan_category="GGL", tenure_months=48, rate_per_gram=10000),
+        LoanScheme(name="KGL - MINT", loan_type="LAA", loan_category="KGL", tenure_months=24, rate_per_gram=11500),
+        LoanScheme(name="KGL - QINT", loan_type="LAA", loan_category="KGL", tenure_months=24, rate_per_gram=11200),
+        LoanScheme(name="IGL - EMI", loan_type="LAA", loan_category="IGL", tenure_months=84, rate_per_gram=12000),
+        LoanScheme(name="IGL - MINT", loan_type="LAA", loan_category="IGL", tenure_months=48, rate_per_gram=11000),
+        LoanScheme(name="ISS KCC", loan_type="CCA", loan_category="KGL", tenure_months=12, rate_per_gram=10800),
+        LoanScheme(name="ISS KCC - Allied", loan_type="CCA", loan_category="KGL", tenure_months=12, rate_per_gram=10800),
+    ]
+
+
 class Settings(BaseModel):
     aws_enabled: Dict[str, bool] = Field(
         default_factory=lambda: {"Fresh Loan": True, "Renewal": False, "Security Operations": False}
@@ -114,8 +143,8 @@ class Settings(BaseModel):
     weight_tolerance_g: float = 0.10
     purity_tolerance_pct: float = 0.5
     damage_deduction: DamageDeduction = "tenths"
-    # The loan amount: net weight (gross less wastage) at one fixed rate per gram.
-    rate_per_gram: float = 8500
+    # The loan amount: net weight (gross less wastage) at the selected scheme's rate per gram.
+    schemes: List[LoanScheme] = Field(default_factory=default_schemes)
     wastage_pct: float = 3.0
 
     def is_enabled_for(self, scenario: str) -> bool:
@@ -129,8 +158,10 @@ class Settings(BaseModel):
             "weight_tolerance_g": self.weight_tolerance_g,
             "purity_tolerance_pct": self.purity_tolerance_pct,
             "damage_deduction": self.damage_deduction,
-            "rate_per_gram": self.rate_per_gram,
             "wastage_pct": self.wastage_pct,
+            "schemes": [s.model_dump() for s in self.schemes],
+            # Filled in from the scheme the assessor picks at the loan valuation step.
+            "rate_per_gram": 0.0,
         }
 
 
@@ -144,8 +175,8 @@ class SettingsPatch(BaseModel):
     weight_tolerance_g: Optional[float] = None
     purity_tolerance_pct: Optional[float] = None
     damage_deduction: Optional[DamageDeduction] = None
-    rate_per_gram: Optional[float] = None
     wastage_pct: Optional[float] = None
+    schemes: Optional[List[LoanScheme]] = None
 
 
 def _to_model(row) -> Settings:
@@ -159,8 +190,8 @@ def _to_model(row) -> Settings:
         weight_tolerance_g=row.weight_tolerance_g if row.weight_tolerance_g is not None else 0.10,
         purity_tolerance_pct=row.purity_tolerance_pct if row.purity_tolerance_pct is not None else 0.5,
         damage_deduction=row.damage_deduction or "tenths",
-        rate_per_gram=row.rate_per_gram if row.rate_per_gram is not None else 8500,
         wastage_pct=row.wastage_pct if row.wastage_pct is not None else 3.0,
+        schemes=[LoanScheme.model_validate(s) for s in (row.schemes or [])] or default_schemes(),
     )
 
 
@@ -211,6 +242,8 @@ def update_settings(patch: Dict[str, Any] | SettingsPatch) -> Settings:
                 setattr(row, key, _clamp(key, value))
         if data.valuation is not None:
             row.valuation = data.valuation.model_dump()
+        if data.schemes is not None:
+            row.schemes = [s.model_dump() for s in data.schemes]
         if data.damage_deduction is not None:
             row.damage_deduction = data.damage_deduction
         db.flush()

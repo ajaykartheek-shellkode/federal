@@ -85,7 +85,7 @@ export default function MobileShell() {
             type="button"
             disabled={!!state.busy}
             onClick={() => openDialog({ kind: "new-session" })}
-            aria-label="Start a new verification"
+            aria-label="Start a new entry"
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-ink-2 active:bg-brand-50 disabled:text-ink-faint"
           >
             <Icon name="plus" size={20} />

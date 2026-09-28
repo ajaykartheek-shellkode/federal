@@ -36,6 +36,7 @@ _MIGRATIONS = [
     "ALTER TABLE customers ADD COLUMN IF NOT EXISTS mobile VARCHAR(24) NOT NULL DEFAULT ''",
     "ALTER TABLE settings ADD COLUMN IF NOT EXISTS rate_per_gram DOUBLE PRECISION NOT NULL DEFAULT 8500",
     "ALTER TABLE settings ADD COLUMN IF NOT EXISTS wastage_pct DOUBLE PRECISION NOT NULL DEFAULT 3.0",
+    "ALTER TABLE settings ADD COLUMN IF NOT EXISTS schemes JSONB",
     "CREATE INDEX IF NOT EXISTS ix_customers_mobile ON customers (mobile)",
     "CREATE INDEX IF NOT EXISTS ix_customers_customer_id ON customers (customer_id)",
 ]
@@ -117,6 +118,8 @@ def seed() -> dict:
             added["settings"] = True
         elif row.valuation is None:
             row.valuation = Settings().valuation.model_dump()  # rates added after this row was created
+        if row is not None and not row.schemes:
+            row.schemes = [s.model_dump() for s in Settings().schemes]
     return added
 
 

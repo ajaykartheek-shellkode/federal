@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import { Card, CardHeader } from "@/components/ui/Card";
 import Icon, { type IconName } from "@/components/ui/Icon";
-import { cn, formatNumber, formatTime, formatWeight, plural } from "@/lib/format";
+import { cn, formatTime, formatWeight, plural } from "@/lib/format";
 import { ease } from "@/lib/motion";
 import type { SessionView } from "@/lib/types";
 
@@ -22,7 +22,7 @@ function Tile({
   icon: IconName;
   label: string;
   value: ReactNode;
-  caption: ReactNode;
+  caption?: ReactNode;
   tone?: "neutral" | "ok" | "warn";
   action?: ReactNode;
 }) {
@@ -40,7 +40,7 @@ function Tile({
         {action}
       </div>
       <p className="mt-1 text-[22px] font-bold leading-tight tabular-nums text-ink">{value}</p>
-      <p className="mt-0.5 truncate text-2xs text-ink-muted">{caption}</p>
+      {caption ? <p className="mt-0.5 truncate text-2xs text-ink-muted">{caption}</p> : null}
     </div>
   );
 }
@@ -93,13 +93,11 @@ function Reconciliation({ session }: { session: SessionView }) {
           icon="gem"
           label="Wastage"
           value={w.gross_g > 0 ? formatWeight(w.wastage_g) : <span className="text-ink-faint">—</span>}
-          caption={`${formatNumber(w.wastage_pct)}% of the gross weight`}
         />
         <Tile
           icon="rupee"
           label="Net weight"
           value={w.gross_g > 0 ? formatWeight(w.net_g) : <span className="text-ink-faint">—</span>}
-          caption="Gross weight less wastage — the loan is sized on this"
           tone={w.gross_g > 0 ? "ok" : "neutral"}
         />
       </div>

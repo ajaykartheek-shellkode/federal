@@ -237,6 +237,28 @@ export interface WeightSummary {
   flagged: number;
 }
 
+export type LoanType = "ODA" | "LAA" | "CCA";
+export type LoanCategory = "GGL" | "KGL" | "IGL";
+
+/** One lending scheme in the catalogue: where it sits, how long it runs, what it pays per gram. */
+export interface LoanSchemeOption {
+  name: string;
+  loan_type: LoanType;
+  loan_category: LoanCategory;
+  tenure_months: number;
+  rate_per_gram: number;
+}
+
+/** The scheme this verification runs under, chosen at the loan valuation step. */
+export interface ChosenScheme {
+  loan_type: LoanType;
+  loan_category: LoanCategory;
+  name: string;
+  tenure_months: number;
+  rate_per_gram: number;
+  chosen_at: string;
+}
+
 export interface ValuedItem {
   ornament_id: string;
   name: string;
@@ -319,6 +341,7 @@ export interface SessionView {
   audit: AuditEntry[];
   report: Report | null;
   signatures: SignatureRecord[];
+  loan_scheme: ChosenScheme | null;
   stats: Stats;
   cbs_damage_pending: string[];
   allowed_actions: StepAction[];
@@ -336,6 +359,8 @@ export interface SessionView {
     carats: string[];
     materials: { key: string; name: string }[];
     grades: Record<string, string[]>;
+    /** The full scheme grid; the UI filters it by loan type, then category. */
+    schemes: LoanSchemeOption[];
   };
 }
 
@@ -383,9 +408,9 @@ export interface AppSettings {
   valuation: { materials: MaterialConfig[] };
   weight_tolerance_g: number;
   purity_tolerance_pct: number;
-  /** The loan amount: net weight × this rate, where net = gross less wastage_pct. */
-  rate_per_gram: number;
+  /** The loan amount: net weight × the selected scheme's rate, where net = gross less wastage_pct. */
   wastage_pct: number;
+  schemes: LoanSchemeOption[];
 }
 
 export type CountTriple = { pass: number; alert: number; fail: number };

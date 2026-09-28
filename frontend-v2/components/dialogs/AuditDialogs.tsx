@@ -289,7 +289,7 @@ export function NewSessionDialog({ open, onClose }: { open: boolean; onClose: ()
       onClose={onClose}
       size="sm"
       icon="plus"
-      title="Start a new verification?"
+      title="Start a new entry?"
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -304,7 +304,7 @@ export function NewSessionDialog({ open, onClose }: { open: boolean; onClose: ()
               reset();
             }}
           >
-            Start new
+            Start Entry
           </Button>
         </>
       }

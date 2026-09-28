@@ -211,7 +211,7 @@ def test_guidance_drafts_carry_the_next_action():
     review = conversation.draft("report", {"report_id": "GLV-1", "recommendation": "REVIEW", "warnings": 2, "fresh": True})
     assert "REVIEW" in review and "No gold loan account is opened yet" in review
     assert "weighing-machine photo" in conversation.draft("continue", {"to": "weight"})
-    assert "loan valuation" in conversation.draft("continue", {"to": "valuation"})
+    assert "loan type, category and scheme" in conversation.draft("continue", {"to": "valuation"})
 
 
 def test_guidance_skips_model_when_ai_off(fake_bedrock):

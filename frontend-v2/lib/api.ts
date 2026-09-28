@@ -172,6 +172,13 @@ export interface RewindEffects {
 export const previewRewind = (sessionId: string, target: string) =>
   request<RewindEffects>(`/api/chat/rewind/${encodeURIComponent(sessionId)}/${encodeURIComponent(target)}`);
 
+/** The lending scheme this loan runs under — its rate per gram prices the net weight. */
+export const setLoanScheme = (sessionId: string, loanType: string, loanCategory: string, scheme: string) =>
+  request<{ session: SessionView }>(
+    "/api/chat/scheme",
+    json("POST", { session_id: sessionId, loan_type: loanType, loan_category: loanCategory, scheme })
+  );
+
 export const rewindTo = (sessionId: string, target: string) =>
   request<{ session: SessionView; message: string }>("/api/chat/rewind", json("POST", { session_id: sessionId, target }));
 

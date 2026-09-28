@@ -8,19 +8,21 @@ import Icon from "@/components/ui/Icon";
 import { formatINR, formatNumber, formatWeight, plural } from "@/lib/format";
 import { ease } from "@/lib/motion";
 import type { SessionView } from "@/lib/types";
+import SchemePicker from "./SchemePicker";
 
 /** The loan follows the weight: gross → less wastage → net → × the rate per gram. */
 export default function PledgeCard({ session }: { session: SessionView }) {
   const { valuation } = session;
   const t = valuation.totals;
   const netShare = t.gross_weight_g > 0 ? t.net_weight_g / t.gross_weight_g : 0;
+  // A verification started before schemes existed captured a flat rate, so it is still priced.
+  const priced = !!session.loan_scheme || t.rate_per_gram > 0;
 
   return (
     <Card id="card-pledge">
       <CardHeader
         icon="rupee"
         title="Loan valuation"
-        subtitle={`Net weight at ${formatINR(t.rate_per_gram)} per gram · wastage ${formatNumber(t.wastage_pct)}%`}
         actions={
           t.is_estimate ? (
             <Badge tone="gold" icon="info" title="Provisional until every ornament has a Karatometer assay">
@@ -34,15 +36,33 @@ export default function PledgeCard({ session }: { session: SessionView }) {
         }
       />
 
+      {(session.loan_scheme || session.workflow_state !== "done") && (
+        <div className="px-4 pb-3 desk:px-5">
+          <SchemePicker session={session} />
+        </div>
+      )}
+
       <div className="grid gap-4 px-4 pb-4 desk:px-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
         <div className="fb-wave relative flex flex-col justify-between overflow-hidden rounded-2xl bg-brand-hero px-5 py-4 text-white">
           <p className="text-2xs font-bold uppercase tracking-[0.16em] text-gold-300">Max loan amount</p>
-          <p className="mt-1 text-[34px] font-bold leading-none tabular-nums">
-            <AnimatedNumber value={t.max_loan_amount} format={(n) => formatINR(n)} />
-          </p>
-          <p className="mt-2 text-xs text-white/70">
-            on {formatWeight(t.net_weight_g)} net across {plural(valuation.items.length, "ornament")}
-          </p>
+          {priced ? (
+            <>
+              <p className="mt-1 text-[34px] font-bold leading-none tabular-nums">
+                <AnimatedNumber value={t.max_loan_amount} format={(n) => formatINR(n)} />
+              </p>
+              <p className="mt-2 text-xs text-white/70">
+                on {formatWeight(t.net_weight_g)} net across {plural(valuation.items.length, "ornament")}
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="mt-1 text-[22px] font-bold leading-tight text-white/60">Awaiting the scheme</p>
+              <p className="mt-2 text-xs text-white/70">
+                {formatWeight(t.net_weight_g)} net across {plural(valuation.items.length, "ornament")} — choose a
+                scheme above and the amount follows.
+              </p>
+            </>
+          )}
         </div>
 
         <div className="rounded-2xl border border-line px-4 py-3">
@@ -87,12 +107,19 @@ export default function PledgeCard({ session }: { session: SessionView }) {
               <dd className="font-semibold tabular-nums text-ink">{formatWeight(t.net_weight_g)}</dd>
             </div>
             <div className="flex items-center justify-between gap-3">
-              <dt className="text-ink-2">Rate per gram</dt>
-              <dd className="tabular-nums text-ink">{formatINR(t.rate_per_gram)}</dd>
+              <dt className="text-ink-2">
+                Rate per gram
+                {session.loan_scheme && <span className="ml-1.5 text-2xs text-ink-muted">{session.loan_scheme.name}</span>}
+              </dt>
+              <dd className="tabular-nums text-ink">
+                {priced ? formatINR(t.rate_per_gram) : <span className="text-ink-faint">—</span>}
+              </dd>
             </div>
             <div className="flex items-center justify-between gap-3 border-t border-line pt-1.5">
               <dt className="font-semibold text-ink">Max loan amount</dt>
-              <dd className="font-bold tabular-nums text-brand-700">{formatINR(t.max_loan_amount)}</dd>
+              <dd className="font-bold tabular-nums text-brand-700">
+                {priced ? formatINR(t.max_loan_amount) : <span className="text-ink-faint">—</span>}
+              </dd>
             </div>
           </dl>
         </div>
@@ -108,7 +135,7 @@ export default function PledgeCard({ session }: { session: SessionView }) {
 
       <p className="flex items-start gap-1.5 px-4 py-2.5 text-2xs text-ink-muted desk:px-5">
         <Icon name="lock" size={12} className="mt-px shrink-0" /> Per-ornament net weights are in the Pledged inventory
-        table · the rate per gram and the wastage percentage were captured from Settings when this verification started.
+        table · the scheme rates and the wastage percentage were captured from Settings when this verification started.
         Indicative — not a sanction.
       </p>
     </Card>

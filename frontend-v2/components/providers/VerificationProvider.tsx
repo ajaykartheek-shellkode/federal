@@ -13,6 +13,7 @@ import {
   removeCollateralPhoto,
   rewindTo,
   removeInventoryItem,
+  setLoanScheme as setLoanSchemeApi,
   submitReport as submitReportApi,
   setItemWeight,
   startSession,
@@ -46,6 +47,7 @@ interface VerificationApi {
   removeItem: (ref: string, justification: string) => Promise<boolean>;
   removePhoto: (index: number) => Promise<boolean>;
   goBackTo: (target: string) => Promise<boolean>;
+  chooseScheme: (loanType: string, loanCategory: string, scheme: string) => Promise<boolean>;
   submitReport: (signatures: SignaturePayload[]) => Promise<boolean>;
   resume: (sessionId: string) => Promise<void>;
   revealItems: () => void;
@@ -424,6 +426,12 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
     [bot, exclusive, handleApiError, setSession, toast]
   );
 
+  const chooseScheme = useCallback(
+    (loanType: string, loanCategory: string, scheme: string) =>
+      mutate((sid) => setLoanSchemeApi(sid, loanType, loanCategory, scheme), `Scheme set · ${scheme}`),
+    [mutate]
+  );
+
   const submitReport = useCallback(
     (signatures: SignaturePayload[]) =>
       mutate((sid) => submitReportApi(sid, signatures), "Verification submitted with the signatures"),
@@ -475,6 +483,7 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
       removeItem,
       removePhoto,
       goBackTo,
+      chooseScheme,
       submitReport,
       revealItems,
       resume,
@@ -485,7 +494,7 @@ export function VerificationProvider({ children }: { children: ReactNode }) {
       toast,
       dismissToast: (id) => dispatch({ type: "dismiss-toast", id }),
     }),
-    [state, start, runStep, send, override, editItem, setScaleReading, setWeight, addItem, removeItem, removePhoto, goBackTo, submitReport, revealItems, resume, reset, toast]
+    [state, start, runStep, send, override, editItem, setScaleReading, setWeight, addItem, removeItem, removePhoto, goBackTo, chooseScheme, submitReport, revealItems, resume, reset, toast]
   );
 
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>;

@@ -182,7 +182,7 @@ def _reset_settings(request):
     """Every API test starts from default settings."""
     yield
     if "client" in request.fixturenames:
-        from app.settings import default_valuation, update_settings
+        from app.settings import default_schemes, default_valuation, update_settings
 
         update_settings({
             "aws_enabled": {"Fresh Loan": True, "Renewal": False, "Security Operations": False},
@@ -190,4 +190,5 @@ def _reset_settings(request):
             "foreign_object_threshold_pct": 10, "doc_match_threshold_pct": 80,
             "valuation": default_valuation().model_dump(), "weight_tolerance_g": 0.1,
             "purity_tolerance_pct": 0.5, "damage_deduction": "tenths",
+            "wastage_pct": 3.0, "schemes": [s.model_dump() for s in default_schemes()],
         })

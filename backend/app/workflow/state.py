@@ -244,6 +244,8 @@ def new_state(
         "audit": [],
         "report": None,
         "signatures": [],
+        # Loan type → category → scheme, captured at the valuation step; the scheme sets the rate.
+        "loan_scheme": None,
     }
 
 
@@ -393,20 +395,31 @@ def stage_blockers(state: dict, stage: str, blocker_mode: bool) -> List[str]:
         if blocker_mode and not state.get("scale_overridden") and weight_summary(state)["scale_status"] in ("pending", "missing"):
             reasons.append("Capture the weighing-machine photo (or enter the total) before continuing.")
     elif stage == "valuation":
-        # The loan is sized on net weight, so an ungraded purity no longer blocks it; the
-        # Karatometer findings for those ornaments are already raised at the weight step.
-        pass
+        # The loan amount cannot be computed until the scheme that prices it has been chosen.
+        if not state.get("loan_scheme"):
+            reasons.append("Choose the loan type, category and scheme before continuing.")
     elif stage == "damage" and blocker_mode:
         failed = unresolved(state["damages"], ("fail",))
         if failed:
             reasons.append(f"{len(failed)} damage photo(s) could not be inspected. Re-capture or override.")
     elif stage == "document":
-        if not document_items(state):
+        items = document_items(state)
+        if not items:
             reasons.append("Upload the customer's documentary proof first.")
-        elif blocker_mode:
-            failed = unresolved(document_items(state), ("fail",))
-            if failed:
-                reasons.append(f"{len(failed)} document(s) could not be read. Re-upload or override.")
+        else:
+            # A proof whose details disagree with CBS stops the loan in every mode — the branch
+            # re-uploads the right document, or an officer overrides it with a justification.
+            mismatched = [d for d in items if d.get("details_match") is False and not d.get("overridden")]
+            if mismatched:
+                names = ", ".join(d.get("declared_type", "document") for d in mismatched[:3])
+                reasons.append(
+                    f"{len(mismatched)} document(s) do not match the CBS record ({names}). "
+                    "Re-upload the correct proof, or override with a justification."
+                )
+            if blocker_mode:
+                failed = unresolved(items, ("fail",))
+                if failed:
+                    reasons.append(f"{len(failed)} document(s) could not be read. Re-upload or override.")
     return reasons
 
 
@@ -523,6 +536,49 @@ def record_collateral(state: dict, images: List[dict], result: Optional[dict]) -
     coll["issues"] = list(result.get("issues") or [])
     coll["corrective_actions"] = list(result.get("corrective_actions") or [])
     return added
+
+
+# --------------------------------------------------------------------------- loan scheme
+def schemes_of(state: dict) -> List[dict]:
+    """The scheme catalogue captured when this verification started."""
+    return list(valuation_of(state).get("schemes") or [])
+
+
+def schemes_for(state: dict, loan_type: str, loan_category: str) -> List[dict]:
+    return [s for s in schemes_of(state) if s["loan_type"] == loan_type and s["loan_category"] == loan_category]
+
+
+def set_loan_scheme(state: dict, loan_type: str, loan_category: str, scheme_name: str) -> dict:
+    """Record the lending scheme this loan runs under. Its rate per gram prices the net weight."""
+    require_unsubmitted(state)
+    require_open(state)
+    match = next((s for s in schemes_for(state, loan_type, loan_category) if s["name"] == scheme_name), None)
+    if match is None:
+        raise WorkflowError("That scheme is not configured for this loan type and category.")
+
+    previous = state.get("loan_scheme")
+    state["loan_scheme"] = {
+        "loan_type": loan_type,
+        "loan_category": loan_category,
+        "name": match["name"],
+        "tenure_months": int(match["tenure_months"]),
+        "rate_per_gram": float(match["rate_per_gram"]),
+        "chosen_at": now_iso(),
+    }
+    # The captured valuation is what prices this session, so the rate lands there.
+    state["valuation"] = {**valuation_of(state), "rate_per_gram": float(match["rate_per_gram"])}
+
+    if not previous:
+        return {}  # choosing the scheme for the first time is data entry, not a correction
+    if previous.get("name") == match["name"]:
+        return {}
+    entry = _audit_entry(
+        "scheme", match["name"], "Loan scheme",
+        f"{previous['loan_type']}/{previous['loan_category']} · {previous['name']}",
+        f"{loan_type}/{loan_category} · {match['name']}", "",
+    )
+    state["audit"].append(entry)
+    return entry
 
 
 # --------------------------------------------------------------------------- going back
@@ -1083,6 +1139,7 @@ def record_documents(state: dict, items: List[dict], result: Optional[dict]) -> 
             "doc_type_detected": "",
             "extracted": {"name": "", "id_number": "", "address": ""},
             "matches": {"name": False, "id": False, "address_pct": 0},
+            "details_match": True,
             "issues": [],
             "overridden": False,
         }
@@ -1098,6 +1155,7 @@ def record_documents(state: dict, items: List[dict], result: Optional[dict]) -> 
                     doc_type_detected=r.get("doc_type_detected", ""),
                     extracted=r.get("extracted") or doc["extracted"],
                     matches=r.get("matches") or doc["matches"],
+                    details_match=bool(r.get("details_match", True)),
                     issues=list(r.get("issues") or []),
                 )
         out.append(doc)
@@ -1508,6 +1566,7 @@ def view(state: dict, settings) -> dict:
         "audit": state["audit"],
         "report": state["report"],
         "signatures": state.get("signatures") or [],
+        "loan_scheme": state.get("loan_scheme"),
         "stats": inventory_stats(state),
         "allowed_actions": list(allowed_actions(state)),
         "gate": gate(state, blocker),
@@ -1524,6 +1583,7 @@ def view(state: dict, settings) -> dict:
             "carats": list(CARATS),
             "materials": [{"key": m["key"], "name": m["name"]} for m in valuation.get("materials", [])],
             "grades": {m["key"]: [g["grade"] for g in m["grades"]] for m in valuation.get("materials", [])},
-            "damage_deduction": valuation.get("damage_deduction", "tenths"),
+            # The scheme grid this verification captured: the UI filters it by type then category.
+            "schemes": schemes_of(state),
         },
     }

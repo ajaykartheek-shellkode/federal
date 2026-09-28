@@ -182,6 +182,8 @@ class DocumentItemResult(BaseModel):
     # OCR + cross-verification against the CBS customer record.
     extracted: DocumentExtracted = Field(default_factory=DocumentExtracted)
     matches: DocumentMatches = Field(default_factory=DocumentMatches)
+    # False once the CBS cross-check finds a name / ID / address disagreement.
+    details_match: bool = True
     pages: List[DocumentPageResult] = Field(default_factory=list)
     issues: List[str] = Field(default_factory=list)
 

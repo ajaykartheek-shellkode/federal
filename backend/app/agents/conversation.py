@@ -36,7 +36,7 @@ JOURNEY = (
     'with everything on the pan: you read the total off the display and apportion it across the '
     'ornaments, so every piece starts with a weight the assessor can correct on the pledge list, '
     'and one Karatometer request per loan application then returns the purity of every ornament; '
-    '3) damage is recorded per ornament, with a close-up when there is one to take — it is documented for the approving officer and never reduces the loan amount; 4) the maximum loan amount is reviewed (net weight = gross weight less a fixed wastage percentage, at a fixed rate per gram); '
+    '3) damage is recorded per ornament, with a close-up when there is one to take — it is documented for the approving officer and never reduces the loan amount; 4) the assessor picks the loan type (ODA/LAA/CCA), the loan category (GGL/KGL/IGL) and the scheme, and the maximum loan amount follows (net weight = gross weight less a fixed wastage percentage, times the scheme rate per gram); '
     '5) identity documents are cross-verified against the CBS customer record; 6) the report is '
     'generated. A fresh loan runs under a loan APPLICATION reference and has no gold loan account '
     'number until the report recommends PROCEED, at which point the account is created; a renewal '
@@ -161,7 +161,12 @@ def draft(step: str, f: dict) -> str:
         return f"{reads}, matching the <strong>{_grams(f.get('entered_g'))}</strong> across the pledge list. {closing}"
 
     if step == "weight":
-        loan = f"Max loan amount <strong>{_inr(f.get('max_loan_amount'))}</strong>."
+        # Before a scheme is chosen there is no amount to quote, so say what comes next instead.
+        loan = (
+            f"Max loan amount <strong>{_inr(f.get('max_loan_amount'))}</strong>."
+            if (f.get("max_loan_amount") or 0) > 0
+            else "The loan amount follows once the scheme is chosen."
+        )
         scale = ""
         if f.get("scale_missing"):
             scale = " No weighing-machine total is recorded yet — upload that photo or enter the total."
@@ -277,8 +282,9 @@ def draft(step: str, f: dict) -> str:
             ),
             "damage": "Are there any <strong>damaged ornaments</strong> to record?",
             "valuation": (
-                "Weights, purity and damage are recorded. Here is the <strong>loan valuation</strong> — "
-                "review the maximum loan amount, then continue to the documents."
+                "Weights, purity and damage are recorded. Choose the <strong>loan type, category and "
+                "scheme</strong> — the scheme's rate per gram is what prices the net weight — then "
+                "review the maximum loan amount and continue to the documents."
             ),
             "document": draft("document_prompt", f),
             "report": "All inputs captured. <strong>Generate the report</strong> when you're ready.",

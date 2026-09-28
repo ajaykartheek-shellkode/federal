@@ -166,6 +166,7 @@ def apply_cbs_checks(result: DocumentResult, cbs: dict, address_threshold: int) 
             problems.append(f"Address match {doc.matches.address_pct}% (min {address_threshold}%)")
         if problems:
             doc.status = "alert"
+            doc.details_match = False
             doc.issues = short_list([*problems, *doc.issues], max_items=3)
     result.overall_status = _worst([d.status for d in result.documents]) if result.documents else result.overall_status
     return result

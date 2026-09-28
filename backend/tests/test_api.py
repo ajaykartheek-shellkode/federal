@@ -49,6 +49,15 @@ def step(client, sid, action, files=None, **form):
     return res, [], None
 
 
+def choose_scheme(client, sid, loan_type="LAA", loan_category="GGL", scheme="GGL - MINT"):
+    """Pick the lending scheme — its rate per gram is what prices the net weight."""
+    res = client.post("/api/chat/scheme", json={
+        "session_id": sid, "loan_type": loan_type, "loan_category": loan_category, "scheme": scheme,
+    })
+    assert res.status_code == 200, res.text
+    return res.json()["session"]
+
+
 def photo(name="set.png", size=(320, 240)):
     return (name, png_bytes(size), "image/png")
 
@@ -127,6 +136,7 @@ def test_fresh_application_gets_its_account_on_sanction(client, fake_bedrock):
     step(client, sid, "scale_photo", files=[("scale_image", photo("scale.png"))])
     step(client, sid, "measure")
     step(client, sid, "continue")  # damage -> valuation
+    choose_scheme(client, sid)
     step(client, sid, "continue")  # valuation -> document
     step(client, sid, "document", files=[("documents", photo())], document_types=json.dumps(["Aadhaar Card"]))
     _, _, s = step(client, sid, "report")
@@ -215,6 +225,7 @@ def test_going_back_to_a_step_discards_only_what_that_step_produced(client, fake
     hints = [{"ornament_id": "item-1", "type": "Dent", "severity": "minor", "details": "Dent", "photo": False}]
     step(client, sid, "damage", damage_hints=json.dumps(hints))
     step(client, sid, "continue")  # damage -> valuation
+    choose_scheme(client, sid)
     step(client, sid, "continue")  # valuation -> document
     step(client, sid, "document", files=[("documents", photo())], document_types=json.dumps(["Aadhaar Card"]))
     _, _, s = step(client, sid, "report")
@@ -242,6 +253,58 @@ def test_going_back_to_a_step_discards_only_what_that_step_produced(client, fake
     assert client.post("/api/chat/rewind", json={"session_id": sid, "target": "nowhere"}).status_code == 409
 
 
+def test_the_scheme_grid_is_filtered_by_type_and_category(client, fake_bedrock):
+    """Type × category decides which schemes a branch may pick, and some combinations have none."""
+    s = start(client)
+    grid = {(x["loan_type"], x["loan_category"]): [] for x in s["options"]["schemes"]}
+    for x in s["options"]["schemes"]:
+        grid[(x["loan_type"], x["loan_category"])].append(x["name"])
+
+    assert grid[("ODA", "GGL")] == ["Digi Gold", "Digi Gold - NRI"]
+    assert grid[("LAA", "GGL")] == ["GGL - MINT", "GGL - QINT"]
+    assert grid[("LAA", "KGL")] == ["KGL - MINT", "KGL - QINT"]
+    assert grid[("LAA", "IGL")] == ["IGL - EMI", "IGL - MINT"]
+    assert grid[("CCA", "KGL")] == ["ISS KCC", "ISS KCC - Allied"]
+    # Configured for nothing else: ODA/KGL, ODA/IGL, CCA/GGL and CCA/IGL have no scheme.
+    for combination in (("ODA", "KGL"), ("ODA", "IGL"), ("CCA", "GGL"), ("CCA", "IGL")):
+        assert combination not in grid
+
+
+def test_a_document_that_does_not_match_cbs_blocks_the_loan(client, fake_bedrock):
+    """Federal's rule: a mismatched proof stops the process, in alert mode as well as blocker."""
+    from app.schemas import DocumentMatches
+
+    fake_bedrock.scale_weight_g = 33.0
+    fake_bedrock.document_matches = DocumentMatches(name=False, id=True, address_pct=95)
+    sid = start(client)["session_id"]
+    step(client, sid, "collateral", files=[("collateral_images", photo())])
+    step(client, sid, "scale_photo", files=[("scale_image", photo("scale.png"))])
+    step(client, sid, "measure")
+    step(client, sid, "continue")
+    choose_scheme(client, sid)
+    step(client, sid, "continue")
+    _, _, s = step(client, sid, "document", files=[("documents", photo())], document_types=json.dumps(["Aadhaar Card"]))
+
+    doc = s["documents"]["items"][0]
+    assert doc["status"] == "alert" and doc["details_match"] is False
+    assert "Name does not match" in doc["issues"][0]
+    # Alert mode, and it still blocks.
+    assert s["settings"]["blocker_mode"] is False
+    assert not s["gate"]["allowed"] and "do not match the CBS record" in s["gate"]["reasons"][0]
+    # Continuing is refused and the agent says why, rather than silently moving on.
+    _, events, s = step(client, sid, "continue")
+    assert any(e == "notice" and "do not match the CBS record" in d["text"] for e, d in events)
+    assert s["workflow_state"] == "document"  # it stays on the document step
+
+    # An officer may still override it, with a justification on the record.
+    ok = client.post("/api/chat/override", json={
+        "session_id": sid, "target": "document", "ref": "1",
+        "justification": "Maiden name on the proof; verified against the passport at the counter",
+    })
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["session"]["gate"]["allowed"] is True
+
+
 def test_a_submitted_verification_can_no_longer_be_changed(client, fake_bedrock):
     fake_bedrock.scale_weight_g = 33.0
     sid = start(client)["session_id"]
@@ -249,6 +312,7 @@ def test_a_submitted_verification_can_no_longer_be_changed(client, fake_bedrock)
     step(client, sid, "scale_photo", files=[("scale_image", photo("scale.png"))])
     step(client, sid, "measure")
     step(client, sid, "continue")
+    choose_scheme(client, sid)
     step(client, sid, "continue")
     step(client, sid, "document", files=[("documents", photo())], document_types=json.dumps(["Aadhaar Card"]))
     step(client, sid, "report")
@@ -271,6 +335,7 @@ def test_the_report_is_submitted_once_the_customer_signs(client, fake_bedrock):
     step(client, sid, "scale_photo", files=[("scale_image", photo("scale.png"))])
     step(client, sid, "measure")
     step(client, sid, "continue")  # damage -> valuation
+    choose_scheme(client, sid)
     step(client, sid, "continue")  # valuation -> document
     step(client, sid, "document", files=[("documents", photo())], document_types=json.dumps(["Aadhaar Card"]))
 
@@ -365,7 +430,7 @@ def test_full_happy_path_with_reports(client, fake_bedrock):
     assert all(r["measurement"] and r["carat"] for r in s["inventory"])
     assert s["measurements"]["device"]["device_id"] == "KM-FED-MUM-001"
     assert s["workflow_state"] == "damage"
-    assert s["stats"]["pledge_is_estimate"] is False and s["stats"]["pledge_amount"] > 0
+    assert s["stats"]["pledge_is_estimate"] is False and s["stats"]["net_weight"] > 0
 
     # Damage is documented, with a close-up when there is one to take and without when there isn't.
     hints = [
@@ -380,12 +445,17 @@ def test_full_happy_path_with_reports(client, fake_bedrock):
     assert with_photo["asset_id"] and with_photo["status"] == "pass"
     assert without["asset_id"] is None and without["status"] == "not_checked"
     assert all(r["damaged"] for r in s["inventory"] if r["id"] in ("item-2", "item-3"))
-    # Damage does not move the loan amount.
-    assert s["stats"]["max_loan_amount"] == round(s["stats"]["net_weight"] * 8500)
+    # Damage does not move the loan amount — which is nothing until a scheme prices it.
+    assert s["stats"]["max_loan_amount"] == 0
 
     _, events, s = step(client, sid, "continue")
-    assert s["workflow_state"] == "valuation" and s["valuation"]["totals"]["pledge_amount"] > 0
+    assert s["workflow_state"] == "valuation"
     assert any(e == "agent-msg" for e, _ in events)
+    # The scheme prices the loan: nothing can be computed, or continued past, without one.
+    assert not s["gate"]["allowed"] and "scheme" in s["gate"]["reasons"][0]
+    s = choose_scheme(client, sid, "LAA", "IGL", "IGL - EMI")   # 84 months at Rs 12,000/g
+    assert s["loan_scheme"]["tenure_months"] == 84 and s["loan_scheme"]["rate_per_gram"] == 12000
+    assert s["valuation"]["totals"]["max_loan_amount"] == round(s["stats"]["net_weight"] * 12000)
 
     _, _, s = step(client, sid, "continue")
     assert s["workflow_state"] == "document"
@@ -554,6 +624,7 @@ def test_damage_and_document_validation(client, fake_bedrock):
     assert len(s["damages"]) == 1 and s["damages"][0]["asset_id"] is None
 
     step(client, sid, "continue")  # damage -> valuation
+    choose_scheme(client, sid)
     step(client, sid, "continue")  # valuation -> document
     res, _, _ = step(client, sid, "document", files=[("documents", ("a.pdf", b"hello", "application/pdf"))],
                      document_types=json.dumps(["Aadhaar Card"]))
@@ -571,6 +642,7 @@ def test_document_mismatch_becomes_alert_and_can_be_overridden(client, fake_bedr
     weigh(client, sid, {"item-1": 10, "item-2": 11, "item-3": 12})
     step(client, sid, "measure")
     step(client, sid, "continue")  # damage -> valuation
+    choose_scheme(client, sid)
     step(client, sid, "continue")  # valuation -> document
     _, _, s = step(client, sid, "document", files=[("documents", photo())], document_types=json.dumps(["Aadhaar Card"]))
     doc = s["documents"]["items"][0]
@@ -602,6 +674,7 @@ def test_ai_off_scenario_never_calls_bedrock(client, fake_bedrock):
     _, _, s = step(client, sid, "measure")  # the CaratMeter is a device, not AI: it runs with AI off
     assert s["workflow_state"] == "damage" and s["measurements"]["count"] == 2
     step(client, sid, "continue")
+    choose_scheme(client, sid)
     step(client, sid, "continue")
     _, _, s = step(client, sid, "document", files=[("documents", photo())], document_types=json.dumps(["Aadhaar Card"]))
     assert s["documents"]["items"][0]["status"] == "not_checked"
@@ -632,38 +705,52 @@ def test_settings_are_validated_and_clamped(client):
     assert client.put("/api/settings", json={"blocker_mode": "maybe"}).status_code == 422
 
 
-def test_valuation_settings_are_validated_and_captured_per_session(client, fake_bedrock):
+def test_scheme_catalogue_prices_the_loan_and_is_captured_per_session(client, fake_bedrock):
     fake_bedrock.scale_weight_g = 33.0
     body = client.get("/api/settings").json()
     assert [m["key"] for m in body["valuation"]["materials"]] == ["gold", "silver"]
-    assert body["rate_per_gram"] == 8500 and body["wastage_pct"] == 3.0
+    assert body["wastage_pct"] == 3.0
+    schemes = {s["name"]: s for s in body["schemes"]}
+    assert len(schemes) == 10
+    assert schemes["IGL - EMI"] == {"name": "IGL - EMI", "loan_type": "LAA", "loan_category": "IGL",
+                                    "tenure_months": 84, "rate_per_gram": 12000}
 
-    def loan_for(session_id):
+    def loan_for(session_id, **scheme):
         step(client, session_id, "scale_photo", files=[("scale_image", photo("scale.png"))])
         step(client, session_id, "measure")
-        return client.get(f"/api/chat/session/{session_id}").json()["session"]["stats"]["max_loan_amount"]
+        s = choose_scheme(client, session_id, **scheme)
+        return s["stats"]["max_loan_amount"]
 
     before_id = start(client)["session_id"]
     step(client, before_id, "collateral", files=[("collateral_images", photo())])
-    before = loan_for(before_id)
-    assert before == round(33.0 * 0.97 * 8500)
+    before = loan_for(before_id, loan_type="ODA", loan_category="GGL", scheme="Digi Gold")
+    assert before == round(33.0 * 0.97 * 9000)
+
+    # A scheme that is not configured for that type and category is refused.
+    bad = client.post("/api/chat/scheme", json={
+        "session_id": before_id, "loan_type": "CCA", "loan_category": "GGL", "scheme": "Digi Gold",
+    })
+    assert bad.status_code == 409 and "not configured" in bad.json()["error"]
 
     valuation = body["valuation"]
     valuation["materials"].append({"key": "Platinum 950", "name": "Platinum", "ltv_pct": 65,
                                    "grades": [{"grade": "pt950", "fineness_pct": 95, "rate_per_gram": 3100}]})
     res = client.put("/api/settings", json={
-        "valuation": valuation, "weight_tolerance_g": 9, "rate_per_gram": 6000, "wastage_pct": 40,
+        "valuation": valuation, "weight_tolerance_g": 9, "wastage_pct": 40,
+        "schemes": [{"name": "Digi Gold", "loan_type": "ODA", "loan_category": "GGL",
+                     "tenure_months": 60, "rate_per_gram": 6000}],
     })
     assert res.status_code == 200, res.text
     saved = res.json()
-    assert saved["valuation"]["materials"][2]["key"] == "platinum-950" and saved["valuation"]["materials"][2]["grades"][0]["grade"] == "PT950"
-    assert saved["weight_tolerance_g"] == 5.0          # clamped
-    assert saved["rate_per_gram"] == 6000 and saved["wastage_pct"] == 25.0  # wastage clamped to 25 %
+    assert saved["valuation"]["materials"][2]["key"] == "platinum-950"
+    assert saved["weight_tolerance_g"] == 5.0            # clamped
+    assert saved["wastage_pct"] == 25.0                  # clamped to 25 %
+    assert [s["rate_per_gram"] for s in saved["schemes"]] == [6000]
 
     after_id = start(client)["session_id"]
     step(client, after_id, "collateral", files=[("collateral_images", photo())])
-    assert loan_for(after_id) == round(33.0 * 0.75 * 6000)  # the new rate and wastage
-    # The session that started earlier keeps the rate it captured.
+    assert loan_for(after_id, loan_type="ODA", loan_category="GGL", scheme="Digi Gold") == round(33.0 * 0.75 * 6000)
+    # The session that started earlier keeps the catalogue and the rate it captured.
     assert client.get(f"/api/chat/session/{before_id}").json()["session"]["stats"]["max_loan_amount"] == before
 
     dup = {"materials": [{"key": "gold", "name": "Gold", "ltv_pct": 75, "grades": [
@@ -699,6 +786,7 @@ def test_report_pdf_download(client, fake_bedrock):
     step(client, sid, "scale_photo", files=[("scale_image", photo("scale.png"))])
     step(client, sid, "measure")
     step(client, sid, "continue")  # damage -> valuation
+    choose_scheme(client, sid)
     step(client, sid, "continue")  # valuation -> document
     step(client, sid, "document", files=[("documents", photo())], document_types=json.dumps(["Aadhaar Card"]))
     _, _, s = step(client, sid, "report")
@@ -723,6 +811,7 @@ def test_answer_uses_session_context(client, fake_bedrock):
     step(client, sid, "collateral", files=[("collateral_images", photo())])
     weigh(client, sid, {"item-1": 10, "item-2": 11, "item-3": 12})
     step(client, sid, "measure")
+    choose_scheme(client, sid)
     context = _qa_context(S.view(session_store.load(sid), get_settings()))
     assert context["loan"]["totals"]["max_loan_amount"] > 0
     assert context["inventory"][0]["entered_weight_g"] == 10

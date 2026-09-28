@@ -316,6 +316,7 @@ def ready(st, scale_g=33.05):
 
 def test_loan_amount_follows_gross_wastage_and_net_weight(listed):
     ready(listed)
+    S.set_loan_scheme(listed, "LAA", "GGL", "GGL - MINT")  # 48 months at Rs 10,200/g
     view = S.valuation_view(listed)
     items = {i["ornament_id"]: i for i in view["items"]}
     chain = items["item-1"]
@@ -327,8 +328,8 @@ def test_loan_amount_follows_gross_wastage_and_net_weight(listed):
     totals = view["totals"]
     assert totals["gross_weight_g"] == 33.0 and totals["wastage_pct"] == 3.0
     assert totals["wastage_g"] == 0.99 and totals["net_weight_g"] == 32.01
-    assert totals["rate_per_gram"] == 8500
-    assert totals["max_loan_amount"] == round(32.01 * 8500)
+    assert totals["rate_per_gram"] == 10200
+    assert totals["max_loan_amount"] == round(32.01 * 10200)
     assert totals["pledge_amount"] == totals["max_loan_amount"]  # the historical key, for Reports
 
     stats = S.inventory_stats(listed)
@@ -347,6 +348,7 @@ def test_the_wastage_percentage_and_rate_come_from_the_session(listed):
 
 def test_damage_is_documented_not_priced(listed):
     ready(listed)
+    S.set_loan_scheme(listed, "LAA", "GGL", "GGL - MINT")
     before = S.inventory_stats(listed)["max_loan_amount"]
     S.record_damage(listed, {"ornament_id": "item-1", "item": "Gold Chain", "type": "Dent",
                              "severity": "moderate", "status": "pass"})
@@ -368,8 +370,10 @@ def test_full_journey_report(listed):
     assert S.advance(listed, False) == "weight"
     ready(listed)
     assert S.advance(listed, False) == "damage"
-    S.record_damage(listed, {"ornament_id": "item-2", "item": "Gold Bangle", "status": "pass", "damage_percent": 4})
+    S.record_damage(listed, {"ornament_id": "item-2", "item": "Gold Bangle", "status": "pass"})
     assert S.advance(listed, False) == "valuation"
+    assert not S.gate(listed, False)["allowed"]  # the scheme prices the loan, so it comes first
+    S.set_loan_scheme(listed, "LAA", "GGL", "GGL - MINT")
     assert S.advance(listed, False) == "document"
     assert not S.gate(listed, False)["allowed"]  # documents are always required
     S.record_documents(listed, [{"doc_no": 1, "declared_type": "Aadhaar Card", "asset_id": "d1", "filename": "a.jpg", "content_type": "image/jpeg"}],
@@ -451,7 +455,7 @@ def test_view_masks_kyc_and_carries_the_journey(listed):
 
 def test_valuation_is_captured_when_the_session_starts():
     custom = Settings().valuation_snapshot()
-    custom["rate_per_gram"] = 9000
+    custom["rate_per_gram"] = 9000   # as a scheme selection would leave it
     custom["wastage_pct"] = 5
     st = S.new_state(customer(), ai_enabled=True, valuation=custom)
     st["session_id"] = "0" * 32
@@ -467,7 +471,7 @@ def test_valuation_is_captured_when_the_session_starts():
 def test_value_item_math():
     from app.valuation import grade_for_fineness, material_config, value_inventory, value_item
 
-    val = Settings().valuation_snapshot()
+    val = {**Settings().valuation_snapshot(), "rate_per_gram": 8500}
     ring = {"id": "item-1", "name": "Ring", "material": "gold", "carat": "", "weight_gm": 5,
             "measurement": {"weight_g": 5.0, "grade": "22K", "fineness_pct": 91.7}}
     valued = value_item(ring, val)

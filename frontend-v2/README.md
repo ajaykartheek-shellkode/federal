@@ -59,9 +59,13 @@ npm run typecheck && npm run lint && npm run build
    recorded damage with any photo and rates severity; items are analysed in parallel. Damage is
    documented for the approving officer and never reduces the loan amount.
 5. **Documents** — ID proof (image or multi-page PDF) with its type. The Document Verifier checks
-   legibility/completeness and cross-verifies name, ID number and address against CBS.
-5b. **Loan valuation** — its own step: gross weight → less wastage → net weight → × the rate per gram
-   → **Max loan amount**.
+   legibility/completeness and cross-verifies name, ID number and address against CBS. **A mismatch
+   blocks the process** — in alert mode as well as blocker mode — until the right proof is uploaded
+   or an officer overrides it with a justification.
+5b. **Loan valuation** — its own step. First capture **loan type** (ODA/LAA/CCA) → **loan category**
+   (GGL/KGL/IGL) → **scheme name**; the grid is filtered as you go and says plainly when a pair has
+   no scheme configured. The scheme's per-gram rate then prices the net weight: gross weight → less
+   wastage → net weight → × rate → **Max loan amount**. The step cannot be passed without a scheme.
 6. **Report** — PROCEED / REVIEW recommendation with reasons, weight & loan valuation, audit trail and
    e-signatures from the **customer**, the branch assessor and the authorising officer. Once the
    customer has signed, **Submit** records the signatures and marks the verification submitted.
@@ -75,7 +79,7 @@ manual verification without calling the model.
 
 Other views: **Reports** (7-day outcomes, by date, by loan account — with thumbnails and failure
 reasons), **History** (reopen any past verification), **Settings** (AI per scenario, enforcement
-mode, thresholds, the loan rate and wastage, purity grades per material and weight/purity tolerances).
+mode, thresholds, the wastage and scheme grid, purity grades per material and weight/purity tolerances).
 
 **Going back.** Every completed step in the stepper is a button: it opens a confirmation listing what
 that step produced and will discard, then rewinds, tells the agent, and writes an audit entry. On a

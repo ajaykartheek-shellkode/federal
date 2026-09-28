@@ -148,7 +148,7 @@ export default function ActionBar() {
       );
       secondary = (
         <Button variant="secondary" icon="plus" onClick={() => openDialog({ kind: "new-session" })}>
-          New verification
+          New Entry
         </Button>
       );
       break;

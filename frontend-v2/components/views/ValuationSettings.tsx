@@ -9,7 +9,7 @@ import { Segmented } from "@/components/ui/Controls";
 import Icon from "@/components/ui/Icon";
 import { cn, formatINR } from "@/lib/format";
 import { ease } from "@/lib/motion";
-import type { AppSettings, MaterialConfig, PurityGrade } from "@/lib/types";
+import type { AppSettings, LoanCategory, LoanSchemeOption, LoanType, MaterialConfig, PurityGrade } from "@/lib/types";
 
 const slug = (text: string) =>
   text
@@ -109,6 +109,23 @@ function TextCell({ value, onChange, invalid, label, placeholder, disabled, mono
         mono && "font-mono text-xs"
       )}
     />
+  );
+}
+
+function SelectCell({ value, options, onChange, label }: { value: string; options: readonly string[]; onChange: (v: string) => void; label: string }) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      aria-label={label}
+      className="h-9 w-full rounded-lg border border-line-strong bg-surface px-2 text-sm font-semibold text-ink outline-none transition-[border-color,box-shadow] focus:border-brand-500 focus:shadow-focus"
+    >
+      {options.map((o) => (
+        <option key={o} value={o}>
+          {o}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -288,50 +305,152 @@ export function ValuationCard({
   );
 }
 
-/** The loan amount: one rate per gram, and the wastage taken off the gross weight. */
+const LOAN_TYPES: LoanType[] = ["ODA", "LAA", "CCA"];
+const LOAN_CATEGORIES: LoanCategory[] = ["GGL", "KGL", "IGL"];
+
+/**
+ * The loan amount: the wastage taken off the gross weight, and the scheme grid whose per-gram
+ * rate prices the net weight. A branch picks type → category → scheme when it values a loan, so
+ * the grid is edited here in that order.
+ */
 export function LoanAmountCard({ draft, setDraft }: { draft: AppSettings; setDraft: (next: AppSettings) => void }) {
-  const example = 100;
-  const net = example * (1 - (draft.wastage_pct || 0) / 100);
+  const schemes = draft.schemes ?? [];
+  const net = 100 * (1 - (draft.wastage_pct || 0) / 100);
+
+  const update = (index: number, patch: Partial<LoanSchemeOption>) =>
+    setDraft({ ...draft, schemes: schemes.map((s, i) => (i === index ? { ...s, ...patch } : s)) });
+
   return (
     <Card>
       <CardHeader
         icon="rupee"
         title="Loan amount"
-        subtitle="Net weight (gross less wastage) × the rate per gram. Captured when a verification starts."
+        subtitle="Net weight (gross less wastage) × the rate per gram of the scheme the branch selects"
       />
       <div className="divide-y divide-line px-4 desk:px-5">
-        <div className="flex flex-wrap items-center justify-between gap-4 py-3.5">
-          <div className="min-w-0 max-w-[520px]">
-            <p className="text-sm font-semibold text-ink">Rate per gram</p>
-            <p className="text-xs text-ink-muted">Applied to the net weight of the whole pledge.</p>
-          </div>
-          <NumberCell
-            label="Rate per gram"
-            value={draft.rate_per_gram}
-            step={50}
-            prefix="₹"
-            className="w-[150px]"
-            onChange={(rate_per_gram) => setDraft({ ...draft, rate_per_gram })}
-          />
-        </div>
         <div className="flex flex-wrap items-center justify-between gap-4 py-3.5">
           <div className="min-w-0 max-w-[520px]">
             <p className="text-sm font-semibold text-ink">Wastage</p>
             <p className="text-xs text-ink-muted">Taken off the gross weight for solder, stones and impurities · allowed 0–25%.</p>
           </div>
-          <NumberCell
-            label="Wastage"
-            value={draft.wastage_pct}
-            step={0.5}
-            suffix="%"
-            className="w-[130px]"
-            onChange={(wastage_pct) => setDraft({ ...draft, wastage_pct })}
-          />
+          <div className="flex items-center gap-3">
+            <Badge tone="neutral">100 g gross → {net.toFixed(2)} g net</Badge>
+            <NumberCell
+              label="Wastage"
+              value={draft.wastage_pct}
+              step={0.5}
+              suffix="%"
+              className="w-[130px]"
+              onChange={(wastage_pct) => setDraft({ ...draft, wastage_pct })}
+            />
+          </div>
         </div>
+
         <div className="py-3.5">
-          <Badge tone="brand">
-            100 g gross → {net.toFixed(2)} g net → {formatINR(net * (draft.rate_per_gram || 0))}
-          </Badge>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-sm font-semibold text-ink">Schemes</p>
+              <p className="text-xs text-ink-muted">
+                Loan type and category decide which schemes a branch may pick · the rate prices the net weight
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              icon="plus"
+              disabled={schemes.length >= 40}
+              onClick={() =>
+                setDraft({
+                  ...draft,
+                  schemes: [...schemes, { name: "", loan_type: "LAA", loan_category: "GGL", tenure_months: 12, rate_per_gram: 0 }],
+                })
+              }
+            >
+              Add scheme
+            </Button>
+          </div>
+
+          <div className="mt-3 overflow-x-auto rounded-xl border border-line">
+            <table className="w-full min-w-[620px] border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-line bg-subtle text-left text-2xs font-bold uppercase tracking-wider text-ink-muted">
+                  <th className="py-2 pl-3.5 pr-2">Scheme</th>
+                  <th className="py-2 pr-2">Loan type</th>
+                  <th className="py-2 pr-2">Category</th>
+                  <th className="py-2 pr-2">Tenure</th>
+                  <th className="py-2 pr-2">Rate per gram</th>
+                  <th className="w-10 py-2 pr-2" />
+                </tr>
+              </thead>
+              <tbody>
+                <AnimatePresence initial={false}>
+                  {schemes.map((s, i) => (
+                    <motion.tr
+                      key={i}
+                      layout="position"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="border-b border-line last:border-b-0"
+                    >
+                      <td className="py-1.5 pl-3.5 pr-2">
+                        <TextCell label={`Scheme ${i + 1}`} value={s.name} placeholder="Digi Gold" onChange={(name) => update(i, { name })} />
+                      </td>
+                      <td className="w-[110px] py-1.5 pr-2">
+                        <SelectCell
+                          label={`Loan type for ${s.name || "scheme"}`}
+                          value={s.loan_type}
+                          options={LOAN_TYPES}
+                          onChange={(loan_type) => update(i, { loan_type: loan_type as LoanType })}
+                        />
+                      </td>
+                      <td className="w-[110px] py-1.5 pr-2">
+                        <SelectCell
+                          label={`Category for ${s.name || "scheme"}`}
+                          value={s.loan_category}
+                          options={LOAN_CATEGORIES}
+                          onChange={(loan_category) => update(i, { loan_category: loan_category as LoanCategory })}
+                        />
+                      </td>
+                      <td className="w-[120px] py-1.5 pr-2">
+                        <NumberCell
+                          label={`Tenure for ${s.name || "scheme"}`}
+                          value={s.tenure_months}
+                          step={1}
+                          suffix="mo"
+                          onChange={(tenure_months) => update(i, { tenure_months })}
+                        />
+                      </td>
+                      <td className="w-[150px] py-1.5 pr-2">
+                        <NumberCell
+                          label={`Rate per gram for ${s.name || "scheme"}`}
+                          value={s.rate_per_gram}
+                          step={50}
+                          prefix="₹"
+                          onChange={(rate_per_gram) => update(i, { rate_per_gram })}
+                        />
+                      </td>
+                      <td className="py-1.5 pr-2 text-right">
+                        <button
+                          type="button"
+                          aria-label={`Remove ${s.name || `scheme ${i + 1}`}`}
+                          onClick={() => setDraft({ ...draft, schemes: schemes.filter((_, j) => j !== i) })}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-faint transition-colors hover:bg-bad-soft hover:text-bad"
+                        >
+                          <Icon name="trash" size={15} />
+                        </button>
+                      </td>
+                    </motion.tr>
+                  ))}
+                </AnimatePresence>
+              </tbody>
+            </table>
+          </div>
+          {schemes.length === 0 && (
+            <p className="mt-2 text-xs text-warn">
+              No schemes are configured — a branch will not be able to value a loan.
+            </p>
+          )}
         </div>
       </div>
     </Card>

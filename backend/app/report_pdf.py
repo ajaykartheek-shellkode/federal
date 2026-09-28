@@ -331,6 +331,12 @@ def _customer(view: dict) -> Table:
         ("Enforcement", "Blocker" if view["settings"]["blocker_mode"] else "Alert"),
         ("Generated", _date(view["report"]["generated_at"])),
     ]
+    scheme = view.get("loan_scheme") or {}
+    if scheme:
+        pairs += [
+            ("Loan type", f"{scheme.get('loan_type', '')} · {scheme.get('loan_category', '')}"),
+            ("Scheme", f"{scheme.get('name', '')} · {scheme.get('tenure_months', '')} months"),
+        ]
     if application:
         pairs.append(("ID proof", loan.get("id_number_masked", "") or "-"))
     rows = []
@@ -471,12 +477,14 @@ def _weight_section(view: dict) -> List:
         ])
     widths = [CONTENT_W - 118 * mm, 26 * mm, 24 * mm, 29 * mm, 14 * mm, 25 * mm]
 
+    scheme = view.get("loan_scheme") or {}
+    scheme_note = f" ({scheme['name']})" if scheme.get("name") else ""
     money = Table([
         [Paragraph("Gross weight", S_MUTED), Paragraph(grams(totals["gross_weight_g"]), S_TD_RIGHT)],
         [Paragraph(f"Less wastage ({totals['wastage_pct']:g}%)", S_MUTED),
          Paragraph("-" + grams(totals["wastage_g"]), S_TD_RIGHT)],
         [Paragraph("Net weight", S_MUTED), Paragraph(grams(totals["net_weight_g"]), S_TD_RIGHT)],
-        [Paragraph("Rate per gram", S_MUTED), Paragraph(inr(totals["rate_per_gram"]), S_TD_RIGHT)],
+        [Paragraph(f"Rate per gram{scheme_note}", S_MUTED), Paragraph(inr(totals["rate_per_gram"]), S_TD_RIGHT)],
         [Paragraph("Max loan amount", _style("pl", 9.5, 12, BRAND, bold=True)),
          Paragraph(inr(totals["max_loan_amount"]), _style("pv", 9.5, 12, BRAND, bold=True, alignment=TA_RIGHT))],
     ], colWidths=[36 * mm, 28 * mm], hAlign="RIGHT")
@@ -487,7 +495,9 @@ def _weight_section(view: dict) -> List:
     ]))
     note = Paragraph(
         f"The maximum loan is the net weight — gross weight less {totals['wastage_pct']:g}% wastage — at "
-        f"{inr(totals['rate_per_gram'])} per gram, as configured when this verification started. "
+        f"{inr(totals['rate_per_gram'])} per gram"
+        + (f" under the {scheme['name']} scheme ({scheme['tenure_months']} months). " if scheme.get("name")
+           else ", as configured when this verification started. ")
         + ("Some ornaments are not assayed yet, so the purity column is provisional. " if totals["is_estimate"] else "")
         + "Indicative — not a sanction.",
         _style("note", 7, 9.5, INK_MUTED),

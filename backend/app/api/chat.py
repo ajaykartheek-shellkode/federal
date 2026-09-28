@@ -374,6 +374,7 @@ def _qa_context(v: dict) -> dict:
             "scale_source", "scale_status", "scale_diff_g", "tolerance_g", "unweighed",
         )},
         "loan": {
+            "scheme": v.get("loan_scheme"),
             "totals": valuation.get("totals"),
             "items": [
                 {k: i[k] for k in ("name", "grade", "gross_weight_g", "net_weight_g", "rate_per_gram")}
@@ -523,6 +524,22 @@ REDO_PROMPT = {
     "document": "Upload the customer's documentary proof again.",
     "report": "Generate the report when you are ready.",
 }
+
+
+class SchemeBody(BaseModel):
+    session_id: str
+    loan_type: str = Field(max_length=8)
+    loan_category: str = Field(max_length=8)
+    scheme: str = Field(max_length=60)
+
+
+@router.post("/scheme")
+async def set_scheme(body: SchemeBody):
+    """The lending scheme this loan runs under — its rate per gram prices the net weight."""
+    return await _mutate(
+        body.session_id,
+        lambda st: S.set_loan_scheme(st, body.loan_type, body.loan_category, body.scheme) or None,
+    )
 
 
 class PhotoRefBody(BaseModel):

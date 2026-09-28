@@ -186,9 +186,10 @@ class Setting(Base):
     weight_tolerance_g: Mapped[float] = mapped_column(Float, default=0.10)
     purity_tolerance_pct: Mapped[float] = mapped_column(Float, default=0.5)
     damage_deduction: Mapped[str] = mapped_column(String(16), default="tenths")
-    # Loan amount = net weight (gross less wastage) × this rate.
-    rate_per_gram: Mapped[float] = mapped_column(Float, default=8500)
+    # Loan amount = net weight (gross less wastage) × the selected scheme's rate.
+    rate_per_gram: Mapped[float] = mapped_column(Float, default=0)  # legacy; schemes carry the rate
     wastage_pct: Mapped[float] = mapped_column(Float, default=3.0)
+    schemes: Mapped[list | None] = mapped_column(JSONB, nullable=True)
 
 
 # --------------------------------------------------------------------------- staff accounts

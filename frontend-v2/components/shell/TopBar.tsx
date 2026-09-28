@@ -75,7 +75,7 @@ export default function TopBar() {
             disabled={!!state.busy}
             onClick={() => openDialog({ kind: "new-session" })}
           >
-            New verification
+            New Entry
           </Button>
         )}
         <AiStatus />
